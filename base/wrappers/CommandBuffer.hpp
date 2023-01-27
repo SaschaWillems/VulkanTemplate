@@ -64,7 +64,10 @@ public:
 		vkCmdBindPipeline(handle, pipeline->getBindPoint(), pipeline->getHandle());
 	}
 	void draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
-		vkCmdDraw(handle, 6, 1, 0, 0);
+		vkCmdDraw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
+	}
+	void drawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
+		vkCmdDrawIndexed(handle, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 	}
 	void updatePushConstant(PipelineLayout *layout, uint32_t index, const void* values) {
 		VkPushConstantRange pushConstantRange = layout->getPushConstantRange(index);
@@ -88,5 +91,13 @@ public:
 	void endRendering()
 	{
 		vkCmdEndRendering(this->handle);
+	}
+	void bindVertexBuffers(uint32_t firstBinding, uint32_t bindingCount, std::vector<VkBuffer> buffers, std::vector<VkDeviceSize> offsets = { 0 })
+	{
+		vkCmdBindVertexBuffers(this->handle, firstBinding, bindingCount, buffers.data(), offsets.data());
+	}
+	void bindIndexBuffer(VkBuffer buffer, VkDeviceSize offset = 0, VkIndexType indexType = VK_INDEX_TYPE_UINT32)
+	{
+		vkCmdBindIndexBuffer(this->handle, buffer, offset, indexType);
 	}
 };

@@ -230,6 +230,22 @@ void VulkanApplication::createPipelineCache()
 	VK_CHECK_RESULT(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 }
 
+void VulkanApplication::createOverlay()
+{
+	overlay = new vks::UIOverlay({
+		.device = *vulkanDevice,
+		.queue = queue,
+		.pipelineCache = pipelineCache,
+		.colorFormat = swapChain.colorFormat,
+		.depthFormat = depthFormat,
+		.rasterizationSamples = settings.sampleCount,
+		.fontFileName = "Roboto-Medium.ttf",
+		.assetPath = getAssetPath(),
+		.scale = 1.0f,
+		.frameCount = getFrameCount(),
+	});
+}
+
 void VulkanApplication::prepare()
 {
 	initSwapchain();
@@ -240,16 +256,7 @@ void VulkanApplication::prepare()
 	setupDepthStencil();
 	createPipelineCache();
 	setupImages();
-	UIOverlay.device = vulkanDevice;
-	UIOverlay.queue = queue;
-	UIOverlay.rasterizationSamples = settings.sampleCount;
-	UIOverlay.setFrameCount(getFrameCount());
-	UIOverlay.fontFileName = getAssetPath() + "Roboto-Medium.ttf";
-	ShaderStage shaderStageVS = ShaderStage(device, getAssetPath() + "shaders/base/uioverlay.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	ShaderStage shaderStageFS = ShaderStage(device, getAssetPath() + "shaders/base/uioverlay.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-	UIOverlay.shaders = { shaderStageVS, shaderStageFS };
-	UIOverlay.prepareResources();
-	UIOverlay.preparePipeline(pipelineCache, swapChain.colorFormat, depthFormat);
+	createOverlay();
 }
 
 VkPipelineShaderStageCreateInfo VulkanApplication::loadShader(std::string fileName, VkShaderStageFlagBits stage)
@@ -581,7 +588,7 @@ void VulkanApplication::renderLoop()
 
 void VulkanApplication::updateOverlay(uint32_t frameIndex)
 {
-	if (!UIOverlay.visible)
+	if (!overlay->visible)
 		return;
 
 	ImGuiIO& io = ImGui::GetIO();
@@ -606,10 +613,10 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 	ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
-	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 5.0f * UIOverlay.scale));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 5.0f * overlay->scale));
 #endif
-	ImGui::PushItemWidth(110.0f * UIOverlay.scale);
-	OnUpdateUIOverlay(&UIOverlay);
+	ImGui::PushItemWidth(110.0f * overlay->scale);
+	OnUpdateOverlay(*overlay);
 	ImGui::PopItemWidth();
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	ImGui::PopStyleVar();
@@ -621,19 +628,19 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 
 	//Check if the overlay's index and vertex buffers needs to be updated (recreated), e.g. because new elements are visible and indices or vertices require additional buffer space
    //@todo: remove?
-	if (UIOverlay.bufferUpdateRequired(frameIndex)) {
+	if (overlay->bufferUpdateRequired(frameIndex)) {
 		std::cout << "UI buffers need to be recreated\n";
 		// Ensure all command buffers have finished execution, so we don't change vertex and/or index buffers still in use
 		// @todo: wait for fences instead?
 		vkQueueWaitIdle(queue);
-		UIOverlay.allocateBuffers(frameIndex);
+		overlay->allocateBuffers(frameIndex);
 	}
 	// @todo: cap update rate
-	UIOverlay.updateBuffers(frameIndex);
+	overlay->updateBuffers(frameIndex);
 
-	//if (UIOverlay.update() || UIOverlay.updated) {
+	//if (overlay->update() || overlay->updated) {
 	//	buildCommandBuffers();
-	//	UIOverlay.updated = false;
+	//	overlay->updated = false;
 	//}
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
@@ -740,7 +747,9 @@ VulkanApplication::~VulkanApplication()
 		vkDestroyFence(device, fence, nullptr);
 	}
 
-	UIOverlay.freeResources();
+	// @todo: deletion queue
+
+	delete overlay;
 
 	delete vulkanDevice;
 
@@ -1110,7 +1119,7 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			paused = !paused;
 			break;
 		case KEY_F1:
-			UIOverlay.visible = !UIOverlay.visible;
+			overlay->visible = !overlay->visible;
 			break;
 		case KEY_ESCAPE:
 			PostQuitMessage(0);
@@ -1545,7 +1554,7 @@ void VulkanApplication::keyboardKey(struct wl_keyboard *keyboard,
 		break;
 	case KEY_F1:
 		if (state)
-			UIOverlay.visible = !UIOverlay.visible;
+			overlay->visible = !overlay->visible;
 		break;
 	case KEY_ESC:
 		quit = true;
@@ -1883,7 +1892,7 @@ void VulkanApplication::handleEvent(const xcb_generic_event_t *event)
 				paused = !paused;
 				break;
 			case KEY_F1:
-				UIOverlay.visible = !UIOverlay.visible;
+				overlay->visible = !overlay->visible;
 				break;				
 		}
 	}
@@ -2120,7 +2129,7 @@ void VulkanApplication::windowResize()
 	setupImages();
 
 	if ((width > 0.0f) && (height > 0.0f)) {
-		UIOverlay.resize(width, height);
+		overlay->resize(width, height);
 	}
 
 	// Command buffers need to be recreated as they may store
@@ -2149,7 +2158,7 @@ void VulkanApplication::handleMouseMove(int32_t x, int32_t y)
 
 	bool handled = false;
 
-	if (UIOverlay.visible) {
+	if (overlay->visible) {
 		ImGuiIO& io = ImGui::GetIO();
 		handled = io.WantCaptureMouse;
 	}
@@ -2207,7 +2216,7 @@ void VulkanApplication::setupSwapChain()
 	swapChain.create(&width, &height, settings.vsync);
 }
 
-void VulkanApplication::OnUpdateUIOverlay(vks::UIOverlay *overlay) {}
+void VulkanApplication::OnUpdateOverlay(vks::UIOverlay &overlay) {}
 
 void VulkanApplication::prepareFrame(VulkanFrameObjects& frame)
 {
@@ -2229,15 +2238,15 @@ void VulkanApplication::prepareFrame(VulkanFrameObjects& frame)
 	//	 @todo: check if ui overlay needs to be updated
 		//if (settings.overlay) {
 		//	updateOverlay();
-		//	if (UIOverlay.bufferUpdateRequired()) {
+		//	if (overlay->bufferUpdateRequired()) {
 		//		std::cout << "UI buffers need to be recreated\n";
 		//		// Ensure all command buffers have finished execution, so we don't change vertex and/or index buffers still in use
 		//		// @todo: wait for fences instead?
 		//		//vkQueueWaitIdle(queue);
-		//		UIOverlay.allocateBuffers();
+		//		overlay->allocateBuffers();
 		//	}
 		//	// @todo: cap update rate
-		//	UIOverlay.updateBuffers();
+		//	overlay->updateBuffers();
 		//}
 }
 
@@ -2349,5 +2358,5 @@ void VulkanApplication::nextFrame()
 		frameCounter = 0;
 		lastTimestamp = tEnd;
 	}
-	UIOverlay.updated = false;
+	overlay->updated = false;
 }

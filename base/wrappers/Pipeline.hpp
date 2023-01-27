@@ -13,14 +13,13 @@
 #if defined(__ANDROID__)
 #include "Android.h"
 #endif
+#include "IDeviceResource.hpp"
 #include "Initializers.hpp"
 #include "VulkanTools.h"
-#include "ShaderStage.hpp"
 #include "PipelineLayout.hpp"
 
-class Pipeline {
+class Pipeline : public IDeviceResource {
 private:
-	VkDevice device = VK_NULL_HANDLE;
 	VkPipeline pso = VK_NULL_HANDLE;
 	VkPipelineBindPoint bindPoint;
 	PipelineLayout* layout = nullptr;
@@ -29,10 +28,7 @@ private:
 	std::vector<VkShaderModule> shaderModules{};
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
 public:
-
-	Pipeline(VkDevice device) {
-		this->device = device;
-	}
+	Pipeline(vks::VulkanDevice& device) : IDeviceResource(device) {};
 
 	~Pipeline() {
 		vkDestroyPipeline(device, pso, nullptr);
@@ -140,4 +136,6 @@ public:
 	VkPipeline getHandle() {
 		return pso;
 	}
+
+	operator VkPipeline() { return pso; };
 };

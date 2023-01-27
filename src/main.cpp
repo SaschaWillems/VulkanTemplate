@@ -152,8 +152,8 @@ public:
 
 		// @todo: draw scene here
 
-		if (UIOverlay.visible) {
-			UIOverlay.draw(cb->handle, getCurrentFrameIndex());
+		if (overlay->visible) {
+			overlay->draw(cb, getCurrentFrameIndex());
 		}
 		cb->endRendering();
 

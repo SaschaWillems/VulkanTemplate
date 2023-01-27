@@ -50,7 +50,6 @@
 #include "Initializers.hpp"
 #include "Device.hpp"
 #include "SwapChain.hpp"
-#include "ShaderStage.hpp"
 #include "Camera.hpp"
 
 #include "CommandBuffer.hpp"
@@ -149,7 +148,7 @@ public:
 	uint32_t width = 1280;
 	uint32_t height = 720;
 
-	vks::UIOverlay UIOverlay;
+	vks::UIOverlay* overlay{ nullptr };
 
 	/** @brief Last frame time measured using a high performance timer (if available) */
 	float frameTimer = 1.0f;
@@ -381,8 +380,8 @@ public:
 	// Note : Waits for the queue to become idle
 	void flushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free);
 
-	// Create a cache pool for rendering pipelines
 	void createPipelineCache();
+	void createOverlay();
 
 	// Prepare commonly used Vulkan functions
 	virtual void prepare();
@@ -401,7 +400,7 @@ public:
 	void nextFrame();
 
 	/** @brief (Virtual) Called when the UI overlay is updating, can be used to add custom elements to the overlay */
-	virtual void OnUpdateUIOverlay(vks::UIOverlay *overlay);
+	virtual void OnUpdateOverlay(vks::UIOverlay& overlay);
 
 	// @todo: Functions for reworked proper sync and per-frame resources
 	void prepareFrame(VulkanFrameObjects& frame);

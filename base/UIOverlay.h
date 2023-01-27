@@ -17,9 +17,17 @@
 #include <iomanip>
 #include <glm/glm.hpp>
 #include "volk.h"
+#include "IDeviceResource.hpp"
 #include "VulkanTools.h"
+#include "Device.hpp"
 #include "Buffer.hpp"
 #include "Device.hpp"
+#include "CommandBuffer.hpp"
+#include "DescriptorPool.hpp"
+#include "DescriptorSetLayout.hpp"
+#include "DescriptorSet.hpp"
+#include "Pipeline.hpp"
+#include "PipelineLayout.hpp"
 
 #include "../external/imgui/imgui.h"
 
@@ -27,59 +35,63 @@
 #include "VulkanAndroid.h"
 #endif
 
-namespace vks 
+namespace vks
 {
-	class UIOverlay 
+	struct OverlayCreateInfo
 	{
-	public:
-		vks::VulkanDevice *device;
+		vks::VulkanDevice& device;
 		VkQueue queue;
+		VkPipelineCache pipelineCache;
+		VkFormat colorFormat;
+		VkFormat depthFormat;
+		VkSampleCountFlagBits rasterizationSamples{ VK_SAMPLE_COUNT_1_BIT };
+		std::string fontFileName{ "" };
+		std::string assetPath{ "" };
+		float scale{ 1.0f };
+		uint32_t frameCount{ 0 };
+	};
 
-		VkSampleCountFlagBits rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
+	class UIOverlay : public IDeviceResource
+	{
+	private:
+		VkQueue queue;
+		VkSampleCountFlagBits rasterizationSamples{ VK_SAMPLE_COUNT_1_BIT };
+		std::string fontFileName{ "" };
+		std::string assetPath{ "" };
+		DescriptorPool* descriptorPool;
+		DescriptorSetLayout* descriptorSetLayout;
+		DescriptorSet* descriptorSet;
+		PipelineLayout* pipelineLayout{ nullptr };
+		Pipeline* pipeline{ nullptr };
+		VkDeviceMemory fontMemory{ VK_NULL_HANDLE };
+		VkImage fontImage{ VK_NULL_HANDLE };
+		VkImageView fontView{ VK_NULL_HANDLE };
+		VkSampler sampler{ VK_NULL_HANDLE };
+		void prepareResources();
+		void preparePipeline(const VkPipelineCache pipelineCache, VkFormat colorFormat, VkFormat depthFormat);
+	public:
 		struct FrameObjects {
 			vks::Buffer vertexBuffer;
 			vks::Buffer indexBuffer;
-			int32_t vertexCount = 0;
-			int32_t indexCount = 0;
+			int32_t vertexCount{ 0 };
+			int32_t indexCount{ 0 };
 		};
 		std::vector<FrameObjects> frameObjects;
-
-		std::vector<VkPipelineShaderStageCreateInfo> shaders;
-		std::string fontFileName = "";
-
-		VkDescriptorPool descriptorPool;
-		VkDescriptorSetLayout descriptorSetLayout;
-		VkDescriptorSet descriptorSet;
-		VkPipelineLayout pipelineLayout;
-		VkPipeline pipeline;
-
-		VkDeviceMemory fontMemory = VK_NULL_HANDLE;
-		VkImage fontImage = VK_NULL_HANDLE;
-		VkImageView fontView = VK_NULL_HANDLE;
-		VkSampler sampler;
 
 		struct PushConstBlock {
 			glm::vec2 scale;
 			glm::vec2 translate;
 		} pushConstBlock;
 
-		bool visible = true;
-		bool updated = false;
-		float scale = 1.0f;
+		bool visible{ true };
+		bool updated{ false };
+		float scale{ 1.0f };
 
-		UIOverlay();
+		UIOverlay(OverlayCreateInfo createInfo);
 		~UIOverlay();
 
-		void setFrameCount(uint32_t frameCount);
-
-		void preparePipeline(const VkPipelineCache pipelineCache, VkFormat colorFormat, VkFormat depthFormat);
-		void prepareResources();
-
-		void draw(const VkCommandBuffer commandBuffer, uint32_t frameIndex);
+		void draw(CommandBuffer* cb, uint32_t frameIndex);
 		void resize(uint32_t width, uint32_t height);
-
-		void freeResources();
 
 		bool header(const char* caption);
 		bool checkBox(const char* caption, bool* value);
@@ -93,16 +105,11 @@ namespace vks
 		bool button(const char* caption);
 		void text(const char* formatstr, ...);
 
-		// @todo: for new sync
-
 		// Checks if the vertex and/or index buffers need to be recreated
 		bool bufferUpdateRequired(uint32_t frameIndex);
 		// (Re)allocate vertex and index buffers
 		void allocateBuffers(uint32_t frameIndex);
 		// Updates the vertex and index buffers with ImGui's current frame data
 		void updateBuffers(uint32_t frameIndex);
-
-		// @todo
-		void setSampleCount(VkSampleCountFlagBits sampleCount);
 	};
 }
