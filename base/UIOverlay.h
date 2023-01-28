@@ -28,6 +28,9 @@
 #include "DescriptorSet.hpp"
 #include "Pipeline.hpp"
 #include "PipelineLayout.hpp"
+#include "Sampler.hpp"
+#include "Image.hpp"
+#include "ImageView.hpp"
 
 #include "../external/imgui/imgui.h"
 
@@ -63,10 +66,10 @@ namespace vks
 		DescriptorSet* descriptorSet;
 		PipelineLayout* pipelineLayout{ nullptr };
 		Pipeline* pipeline{ nullptr };
+		Image* fontImage{ nullptr };
+		ImageView* fontView{ nullptr };
 		VkDeviceMemory fontMemory{ VK_NULL_HANDLE };
-		VkImage fontImage{ VK_NULL_HANDLE };
-		VkImageView fontView{ VK_NULL_HANDLE };
-		VkSampler sampler{ VK_NULL_HANDLE };
+		Sampler* sampler{ nullptr };
 		void prepareResources();
 		void preparePipeline(const VkPipelineCache pipelineCache, VkFormat colorFormat, VkFormat depthFormat);
 	public:

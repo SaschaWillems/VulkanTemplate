@@ -1,10 +1,10 @@
 /*
-* Vulkan descriptor set layout abstraction class
-*
-* Copyright (C) by Sascha Willems - www.saschawillems.de
-*
-* This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
-*/
+ * Vulkan descriptor set layout abstraction class
+ *
+ * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ *
+ * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
+ */
 
 #pragma once
 
@@ -13,31 +13,25 @@
 #include "Initializers.hpp"
 #include "VulkanTools.h"
 
+struct DescriptorSetLayoutCreateInfo {
+	vks::VulkanDevice& device;
+	std::vector<VkDescriptorSetLayoutBinding> bindings;
+};
+
+
 class DescriptorSetLayout {
 private:
-	VkDevice device;
-	std::vector<VkDescriptorSetLayoutBinding> bindings;
+	vks::VulkanDevice& device;
 public:
 	VkDescriptorSetLayout handle = VK_NULL_HANDLE;
-	DescriptorSetLayout(VkDevice device) {
+
+	DescriptorSetLayout(DescriptorSetLayoutCreateInfo createInfo) : device(createInfo.device) {
 		this->device = device;
-	}
-	~DescriptorSetLayout() {
-		// @todo
-	}
-	void create() {
-		VkDescriptorSetLayoutCreateInfo CI = vks::initializers::descriptorSetLayoutCreateInfo(bindings.data(), static_cast<uint32_t>(bindings.size()));
+		VkDescriptorSetLayoutCreateInfo CI = vks::initializers::descriptorSetLayoutCreateInfo(createInfo.bindings.data(), static_cast<uint32_t>(createInfo.bindings.size()));
 		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &CI, nullptr, &handle));
 	}
-	void addBinding(VkDescriptorSetLayoutBinding binding) {
-		bindings.push_back(binding);
-	}
-	void addBinding(uint32_t binding, VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t descriptorCount = 1) {
-		VkDescriptorSetLayoutBinding setLayoutBinding{};
-		setLayoutBinding.descriptorType = type;
-		setLayoutBinding.stageFlags = stageFlags;
-		setLayoutBinding.binding = binding;
-		setLayoutBinding.descriptorCount = descriptorCount;
-		bindings.push_back(setLayoutBinding);
+
+	~DescriptorSetLayout() {
+		vkDestroyDescriptorSetLayout(device, handle, nullptr);
 	}
 };

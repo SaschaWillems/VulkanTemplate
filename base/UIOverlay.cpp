@@ -47,10 +47,10 @@ namespace vks
 			frame.vertexBuffer.destroy();
 			frame.indexBuffer.destroy();
 		}
-		vkDestroyImageView(device.logicalDevice, fontView, nullptr);
-		vkDestroyImage(device.logicalDevice, fontImage, nullptr);
 		vkFreeMemory(device.logicalDevice, fontMemory, nullptr);
-		vkDestroySampler(device.logicalDevice, sampler, nullptr);
+		delete fontImage;
+		delete fontView;
+		delete sampler;
 		delete descriptorPool;
 		delete descriptorSetLayout;
 		delete descriptorSet;
@@ -86,37 +86,16 @@ namespace vks
 		VkDeviceSize uploadSize = texWidth*texHeight * 4 * sizeof(char);
 
 		// Create target image for copy
-		VkImageCreateInfo imageInfo = vks::initializers::imageCreateInfo();
-		imageInfo.imageType = VK_IMAGE_TYPE_2D;
-		imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-		imageInfo.extent.width = texWidth;
-		imageInfo.extent.height = texHeight;
-		imageInfo.extent.depth = 1;
-		imageInfo.mipLevels = 1;
-		imageInfo.arrayLayers = 1;
-		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-		imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		VK_CHECK_RESULT(vkCreateImage(device.logicalDevice, &imageInfo, nullptr, &fontImage));
-		VkMemoryRequirements memReqs;
-		vkGetImageMemoryRequirements(device.logicalDevice, fontImage, &memReqs);
-		VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
-		memAllocInfo.allocationSize = memReqs.size;
-		memAllocInfo.memoryTypeIndex = device.getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device.logicalDevice, &memAllocInfo, nullptr, &fontMemory));
-		VK_CHECK_RESULT(vkBindImageMemory(device.logicalDevice, fontImage, fontMemory, 0));
+		fontImage = new Image({
+			.device = device,
+			.type = VK_IMAGE_TYPE_2D,
+			.format = VK_FORMAT_R8G8B8A8_UNORM,
+			.extent = { .width = (uint32_t)texWidth, .height = (uint32_t)texHeight, .depth = 1 },
+			.tiling = VK_IMAGE_TILING_OPTIMAL,
+			.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+		});
 
-		// Image view
-		VkImageViewCreateInfo viewInfo = vks::initializers::imageViewCreateInfo();
-		viewInfo.image = fontImage;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		viewInfo.subresourceRange.levelCount = 1;
-		viewInfo.subresourceRange.layerCount = 1;
-		VK_CHECK_RESULT(vkCreateImageView(device.logicalDevice, &viewInfo, nullptr, &fontView));
+		fontView = new ImageView(fontImage);
 
 		// Staging buffers for font data upload
 		vks::Buffer stagingBuffer;
@@ -137,7 +116,7 @@ namespace vks
 		// Prepare for transfer
 		vks::tools::setImageLayout(
 			copyCmd,
-			fontImage,
+			*fontImage,
 			VK_IMAGE_ASPECT_COLOR_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -155,7 +134,7 @@ namespace vks
 		vkCmdCopyBufferToImage(
 			copyCmd,
 			stagingBuffer.buffer,
-			fontImage,
+			*fontImage,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
 			&bufferCopyRegion
@@ -164,7 +143,7 @@ namespace vks
 		// Prepare for shader read
 		vks::tools::setImageLayout(
 			copyCmd,
-			fontImage,
+			*fontImage,
 			VK_IMAGE_ASPECT_COLOR_BIT,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -175,32 +154,44 @@ namespace vks
 
 		stagingBuffer.destroy();
 
-		// Font texture Sampler
-		VkSamplerCreateInfo samplerInfo = vks::initializers::samplerCreateInfo();
-		samplerInfo.magFilter = VK_FILTER_LINEAR;
-		samplerInfo.minFilter = VK_FILTER_LINEAR;
-		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		VK_CHECK_RESULT(vkCreateSampler(device.logicalDevice, &samplerInfo, nullptr, &sampler));
-		VkDescriptorImageInfo fontDescriptor = vks::initializers::descriptorImageInfo(sampler, fontView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL );
+		// @todo: replace VK_DESC* constants?
 
-		descriptorPool = new DescriptorPool(device);
-		descriptorPool->setMaxSets(1);
-		descriptorPool->addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
-		descriptorPool->create();
+		sampler = new Sampler({
+			.device = device,			
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+		});
 
-		descriptorSetLayout = new DescriptorSetLayout(device);
-		descriptorSetLayout->addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
-		descriptorSetLayout->create();
+		VkDescriptorImageInfo fontDescriptor = {
+			.sampler = *sampler,
+			.imageView = *fontView,
+			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		};
 
-		descriptorSet = new DescriptorSet(device);
-		descriptorSet->setPool(descriptorPool);
-		descriptorSet->addLayout(descriptorSetLayout);
-		descriptorSet->addDescriptor(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &fontDescriptor);
-		descriptorSet->create();
+		descriptorPool = new DescriptorPool({
+			.device = device,
+			.maxSets = 1,
+			.poolSizes = {
+				{ .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 },
+			}
+		});
+
+		descriptorSetLayout = new DescriptorSetLayout({
+			.device = device,
+			.bindings = {
+				{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
+			}
+		});
+
+		descriptorSet = new DescriptorSet({
+			.device = device,
+			.pool = descriptorPool,
+			.layouts = { descriptorSetLayout->handle },
+			.descriptors = {
+				{ .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &fontDescriptor }
+			}
+		});
 	}
 
 	/** Prepare a separate pipeline for the UI overlay rendering decoupled from the main application */
@@ -208,10 +199,13 @@ namespace vks
 	{
 		VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstBlock), 0);
 
-		pipelineLayout = new PipelineLayout(device);
-		pipelineLayout->addLayout(descriptorSetLayout);
-		pipelineLayout->addPushConstantRange(sizeof(PushConstBlock), 0, VK_SHADER_STAGE_VERTEX_BIT);
-		pipelineLayout->create();
+		pipelineLayout = new PipelineLayout({
+			.device = device,
+			.layouts = { descriptorSetLayout->handle },
+			.pushConstantRanges = {
+				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
+			}
+		});
 
 		// Setup graphics pipeline for UI rendering
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -253,6 +247,7 @@ namespace vks
 		pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 
 		// Vertex bindings an attributes based on ImGui vertex definition
+		// @todo: designated initializers, move to pipeline creation struct
 		std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
 			vks::initializers::vertexInputBindingDescription(0, sizeof(ImDrawVert), VK_VERTEX_INPUT_RATE_VERTEX),
 		};
@@ -267,6 +262,7 @@ namespace vks
 		vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
 		vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
 
+		// @todo: designated initializers
 		pipeline = new Pipeline(device);
 		pipeline->setCreateInfo(pipelineCreateInfo);
 		pipeline->setVertexInputState(&vertexInputState);
