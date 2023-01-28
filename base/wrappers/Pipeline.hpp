@@ -28,15 +28,15 @@ struct PipelineCreateInfo {
 	VkPipelineCreateFlags flags;
 	uint32_t stageCount;
 	//const VkPipelineShaderStageCreateInfo* pStages;
-	const VkPipelineVertexInputStateCreateInfo* vertexInputState{ nullptr };
-	const VkPipelineInputAssemblyStateCreateInfo* inputAssemblyState{ nullptr };
-	const VkPipelineTessellationStateCreateInfo* tessellationState{ nullptr };
-	const VkPipelineViewportStateCreateInfo* viewportState{ nullptr };
-	const VkPipelineRasterizationStateCreateInfo* rasterizationState{ nullptr };
-	const VkPipelineMultisampleStateCreateInfo* multisampleState{ nullptr };
-	const VkPipelineDepthStencilStateCreateInfo* depthStencilState{ nullptr };
-	const VkPipelineColorBlendStateCreateInfo* colorBlendState{ nullptr };
-	const VkPipelineDynamicStateCreateInfo* dynamicState{ nullptr };
+	VkPipelineVertexInputStateCreateInfo vertexInputState{ };
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{ };
+	VkPipelineTessellationStateCreateInfo tessellationState{ };
+	VkPipelineViewportStateCreateInfo viewportState{ };
+	VkPipelineRasterizationStateCreateInfo rasterizationState{ };
+	VkPipelineMultisampleStateCreateInfo multisampleState{ };
+	VkPipelineDepthStencilStateCreateInfo depthStencilState{ };
+	VkPipelineColorBlendStateCreateInfo colorBlendState{ };
+	VkPipelineDynamicStateCreateInfo dynamicState{ };
 	VkRenderPass renderPass;
 	uint32_t subpass;
 	VkPipeline basePipelineHandle;
@@ -109,21 +109,32 @@ public:
 		for (auto& shader : createInfo.shaders) {
 			addShader(shader);
 		}
+
+		createInfo.inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		createInfo.vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		createInfo.viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		createInfo.rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		createInfo.multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		createInfo.depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		createInfo.colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		createInfo.dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+
 		VkGraphicsPipelineCreateInfo pipelineCI{};
 		pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 		pipelineCI.pStages = shaderStages.data();
 		pipelineCI.layout = createInfo.layout;
-		pipelineCI.pVertexInputState = createInfo.vertexInputState;
-		pipelineCI.pInputAssemblyState = createInfo.inputAssemblyState;
-		pipelineCI.pTessellationState = createInfo.tessellationState;
-		pipelineCI.pViewportState = createInfo.viewportState;
-		pipelineCI.pRasterizationState = createInfo.rasterizationState;
-		pipelineCI.pMultisampleState = createInfo.multisampleState;
-		pipelineCI.pDepthStencilState = createInfo.depthStencilState;
-		pipelineCI.pColorBlendState = createInfo.colorBlendState;
-		pipelineCI.pDynamicState = createInfo.dynamicState;
+		pipelineCI.pVertexInputState = &createInfo.vertexInputState;
+		pipelineCI.pInputAssemblyState = &createInfo.inputAssemblyState;
+		pipelineCI.pTessellationState = &createInfo.tessellationState;
+		pipelineCI.pViewportState = &createInfo.viewportState;
+		pipelineCI.pRasterizationState = &createInfo.rasterizationState;
+		pipelineCI.pMultisampleState = &createInfo.multisampleState;
+		pipelineCI.pDepthStencilState = &createInfo.depthStencilState;
+		pipelineCI.pColorBlendState = &createInfo.colorBlendState;
+		pipelineCI.pDynamicState = &createInfo.dynamicState;
 		pipelineCI.pNext = createInfo.pNext;
+
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, createInfo.cache, 1, &pipelineCI, nullptr, &pso));
 		
 		// Shader modules can be safely destroyed after pipeline creation
@@ -133,8 +144,6 @@ public:
 		shaderModules.clear();
 
 		bindPoint = createInfo.bindPoint;
-		// @todo: pstages
-		// @todo: set stypes for stuff != null
 	};
 
 	~Pipeline() {

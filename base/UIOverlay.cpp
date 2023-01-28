@@ -197,27 +197,6 @@ namespace vks
 	/** Prepare a separate pipeline for the UI overlay rendering decoupled from the main application */
 	void UIOverlay::preparePipeline(const VkPipelineCache pipelineCache, VkFormat colorFormat, VkFormat depthFormat)
 	{
-		// Setup graphics pipeline for UI rendering
-		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
-		VkPipelineRasterizationStateCreateInfo rasterizationState = vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-		VkPipelineDepthStencilStateCreateInfo depthStencilState = vks::initializers::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_ALWAYS);
-		VkPipelineViewportStateCreateInfo viewportState = vks::initializers::pipelineViewportStateCreateInfo(1, 1, 0);
-		VkPipelineMultisampleStateCreateInfo multisampleState = vks::initializers::pipelineMultisampleStateCreateInfo(rasterizationSamples);
-		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-		VkPipelineDynamicStateCreateInfo dynamicState = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
-
-		// Enable blending
-		VkPipelineColorBlendAttachmentState blendAttachmentState{};
-		blendAttachmentState.blendEnable = VK_TRUE;
-		blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		blendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-		blendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		blendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
-		blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-		blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
-		VkPipelineColorBlendStateCreateInfo colorBlendState = vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
-
 		// New create info to define color, depth and stencil attachments at pipeline create time
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
@@ -225,16 +204,6 @@ namespace vks
 		pipelineRenderingCreateInfo.pColorAttachmentFormats = &colorFormat;
 		pipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
 		pipelineRenderingCreateInfo.stencilAttachmentFormat = depthFormat;
-
-		VkGraphicsPipelineCreateInfo pipelineCreateInfo = vks::initializers::pipelineCreateInfo();
-		pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
-		pipelineCreateInfo.pRasterizationState = &rasterizationState;
-		pipelineCreateInfo.pColorBlendState = &colorBlendState;
-		pipelineCreateInfo.pMultisampleState = &multisampleState;
-		pipelineCreateInfo.pViewportState = &viewportState;
-		pipelineCreateInfo.pDepthStencilState = &depthStencilState;
-		pipelineCreateInfo.pDynamicState = &dynamicState;
-		pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 
 		// Vertex bindings an attributes based on ImGui vertex definition
 		// @todo: designated initializers, move to pipeline creation struct
@@ -252,7 +221,19 @@ namespace vks
 		vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
 		vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
 
+		VkPipelineColorBlendAttachmentState blendAttachmentState{};
+		blendAttachmentState.blendEnable = VK_TRUE;
+		blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		blendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		blendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		blendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+		blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+
 		VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstBlock), 0);
+
+		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 
 		pipelineLayout = new PipelineLayout({
 			.device = device,
@@ -261,6 +242,8 @@ namespace vks
 				{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
 			}
 		});
+
+		// @todo: thin wrappers for all vulkan structs so you can initialize the whole pipeline
 
 		pipeline = new Pipeline({
 			.device = device,
@@ -271,14 +254,41 @@ namespace vks
 			.cache = pipelineCache,
 			.layout = *pipelineLayout,
 			.pNext = &pipelineRenderingCreateInfo,
-			.vertexInputState = &vertexInputState,
-			.inputAssemblyState = &inputAssemblyState,
-			.viewportState = &viewportState,
-			.rasterizationState = &rasterizationState,
-			.multisampleState = &multisampleState,
-			.depthStencilState = &depthStencilState,
-			.colorBlendState = &colorBlendState,
-			.dynamicState = &dynamicState
+			.vertexInputState = vertexInputState,
+			.inputAssemblyState = {
+				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+			},
+			.viewportState = {
+				.viewportCount = 1,
+				.scissorCount = 1
+			},
+			.rasterizationState = {
+				.polygonMode = VK_POLYGON_MODE_FILL,
+				.cullMode = VK_CULL_MODE_BACK_BIT,
+				.frontFace = VK_FRONT_FACE_CLOCKWISE,
+				.lineWidth = 1.0f
+			},
+			.multisampleState = {
+				.rasterizationSamples = rasterizationSamples,
+			},
+			.depthStencilState = {
+				.depthTestEnable = VK_FALSE,
+				.depthWriteEnable = VK_FALSE,
+				.front = {
+					.compareOp = VK_COMPARE_OP_ALWAYS,
+				},
+				.back = {
+					.compareOp = VK_COMPARE_OP_ALWAYS,
+				}
+			},
+			.colorBlendState = {
+				.attachmentCount = 1,
+				.pAttachments = &blendAttachmentState
+			},
+			.dynamicState = {
+				.dynamicStateCount = (uint32_t)(dynamicStateEnables.size()),
+				.pDynamicStates = dynamicStateEnables.data()
+			}
 		});
 	}
 
