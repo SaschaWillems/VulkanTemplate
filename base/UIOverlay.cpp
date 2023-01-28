@@ -197,16 +197,6 @@ namespace vks
 	/** Prepare a separate pipeline for the UI overlay rendering decoupled from the main application */
 	void UIOverlay::preparePipeline(const VkPipelineCache pipelineCache, VkFormat colorFormat, VkFormat depthFormat)
 	{
-		VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstBlock), 0);
-
-		pipelineLayout = new PipelineLayout({
-			.device = device,
-			.layouts = { descriptorSetLayout->handle },
-			.pushConstantRanges = {
-				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
-			}
-		});
-
 		// Setup graphics pipeline for UI rendering
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 		VkPipelineRasterizationStateCreateInfo rasterizationState = vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
@@ -262,16 +252,34 @@ namespace vks
 		vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
 		vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
 
-		// @todo: designated initializers
-		pipeline = new Pipeline(device);
-		pipeline->setCreateInfo(pipelineCreateInfo);
-		pipeline->setVertexInputState(&vertexInputState);
-		pipeline->setCache(pipelineCache);
-		pipeline->setLayout(pipelineLayout);
-		pipeline->addShader(assetPath + "shaders/base/uioverlay.vert.spv");
-		pipeline->addShader(assetPath + "shaders/base/uioverlay.frag.spv");
-		pipeline->setpNext(&pipelineRenderingCreateInfo);
-		pipeline->create();
+		VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstBlock), 0);
+
+		pipelineLayout = new PipelineLayout({
+			.device = device,
+			.layouts = { descriptorSetLayout->handle },
+			.pushConstantRanges = {
+				{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
+			}
+		});
+
+		pipeline = new Pipeline({
+			.device = device,
+			.shaders = {
+				assetPath + "shaders/base/uioverlay.vert.spv",
+				assetPath + "shaders/base/uioverlay.frag.spv"
+			},
+			.cache = pipelineCache,
+			.layout = *pipelineLayout,
+			.pNext = &pipelineRenderingCreateInfo,
+			.vertexInputState = &vertexInputState,
+			.inputAssemblyState = &inputAssemblyState,
+			.viewportState = &viewportState,
+			.rasterizationState = &rasterizationState,
+			.multisampleState = &multisampleState,
+			.depthStencilState = &depthStencilState,
+			.colorBlendState = &colorBlendState,
+			.dynamicState = &dynamicState
+		});
 	}
 
 	void UIOverlay::draw(CommandBuffer* cb, uint32_t frameIndex)

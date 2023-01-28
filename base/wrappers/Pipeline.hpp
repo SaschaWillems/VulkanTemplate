@@ -13,40 +13,43 @@
 #if defined(__ANDROID__)
 #include "Android.h"
 #endif
-#include "IDeviceResource.hpp"
+#include "Device.hpp"
 #include "Initializers.hpp"
 #include "VulkanTools.h"
 #include "PipelineLayout.hpp"
 
-class Pipeline : public IDeviceResource {
+struct PipelineCreateInfo {
+	vks::VulkanDevice& device;
+	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
+	std::vector<std::string> shaders{};
+	VkPipelineCache cache{ VK_NULL_HANDLE };
+	VkPipelineLayout layout;
+	const void* pNext{ nullptr };
+	VkPipelineCreateFlags flags;
+	uint32_t stageCount;
+	//const VkPipelineShaderStageCreateInfo* pStages;
+	const VkPipelineVertexInputStateCreateInfo* vertexInputState{ nullptr };
+	const VkPipelineInputAssemblyStateCreateInfo* inputAssemblyState{ nullptr };
+	const VkPipelineTessellationStateCreateInfo* tessellationState{ nullptr };
+	const VkPipelineViewportStateCreateInfo* viewportState{ nullptr };
+	const VkPipelineRasterizationStateCreateInfo* rasterizationState{ nullptr };
+	const VkPipelineMultisampleStateCreateInfo* multisampleState{ nullptr };
+	const VkPipelineDepthStencilStateCreateInfo* depthStencilState{ nullptr };
+	const VkPipelineColorBlendStateCreateInfo* colorBlendState{ nullptr };
+	const VkPipelineDynamicStateCreateInfo* dynamicState{ nullptr };
+	VkRenderPass renderPass;
+	uint32_t subpass;
+	VkPipeline basePipelineHandle;
+	int32_t basePipelineIndex;
+};
+
+class Pipeline {
 private:
+	vks::VulkanDevice& device;
 	VkPipeline pso = VK_NULL_HANDLE;
-	VkPipelineBindPoint bindPoint;
-	PipelineLayout* layout = nullptr;
-	VkGraphicsPipelineCreateInfo pipelineCI;
-	VkPipelineCache cache;
 	std::vector<VkShaderModule> shaderModules{};
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
-public:
-	Pipeline(vks::VulkanDevice& device) : IDeviceResource(device) {};
-
-	~Pipeline() {
-		vkDestroyPipeline(device, pso, nullptr);
-	}
-
-	void create() {
-		assert(layout);
-		pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
-		pipelineCI.pStages = shaderStages.data();
-		pipelineCI.layout = layout->handle;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, cache, 1, &pipelineCI, nullptr, &pso));
-		// Shader modules can be safely destroyed after pipeline creation
-		for (auto& shaderModule : shaderModules) {
-			vkDestroyShaderModule(device, shaderModule, nullptr);
-		}
-		shaderModules.clear();
-	}
-
+	
 	void addShader(std::string filename) {
 		// Get shader stage from file extension (.spv is omitted)
 		size_t extpos = filename.find('.');
@@ -76,7 +79,8 @@ public:
 			shaderCode = new char[shaderSize];
 			is.read(shaderCode, shaderSize);
 			is.close();
-		} else {
+		}
+		else {
 			std::cerr << "Error: Could not open shader file \"" << filename << "\"" << std::endl;
 		}
 #endif
@@ -98,43 +102,43 @@ public:
 		shaderStageCI.pName = "main";
 		shaderStages.push_back(shaderStageCI);
 	}
+public:
+	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 
-	void setLayout(PipelineLayout* layout) {
-		this->layout = layout;
-	}
-
-	void setCreateInfo(VkGraphicsPipelineCreateInfo pipelineCI) {
-		this->pipelineCI = pipelineCI;
-		this->bindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	}
-
-	void setVertexInputState(VkPipelineVertexInputStateCreateInfo* vertexInputStateCI) {
-		this->pipelineCI.pVertexInputState = vertexInputStateCI;
-	}
-
-	void setCache(VkPipelineCache cache) {
-		this->cache = cache;
-	}
-
-	void setSampleCount(VkSampleCountFlagBits sampleCount) {
-		VkPipelineMultisampleStateCreateInfo* pMultisampleState = (VkPipelineMultisampleStateCreateInfo*)this->pipelineCI.pMultisampleState;
-		pMultisampleState->rasterizationSamples = sampleCount;
-		// @todo
-		if (sampleCount != VK_SAMPLE_COUNT_1_BIT) {
-			//pMultisampleState->alphaToCoverageEnable = VK_TRUE;
+	Pipeline(PipelineCreateInfo createInfo) : device(createInfo.device) {
+		for (auto& shader : createInfo.shaders) {
+			addShader(shader);
 		}
-	}
+		VkGraphicsPipelineCreateInfo pipelineCI{};
+		pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+		pipelineCI.pStages = shaderStages.data();
+		pipelineCI.layout = createInfo.layout;
+		pipelineCI.pVertexInputState = createInfo.vertexInputState;
+		pipelineCI.pInputAssemblyState = createInfo.inputAssemblyState;
+		pipelineCI.pTessellationState = createInfo.tessellationState;
+		pipelineCI.pViewportState = createInfo.viewportState;
+		pipelineCI.pRasterizationState = createInfo.rasterizationState;
+		pipelineCI.pMultisampleState = createInfo.multisampleState;
+		pipelineCI.pDepthStencilState = createInfo.depthStencilState;
+		pipelineCI.pColorBlendState = createInfo.colorBlendState;
+		pipelineCI.pDynamicState = createInfo.dynamicState;
+		pipelineCI.pNext = createInfo.pNext;
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, createInfo.cache, 1, &pipelineCI, nullptr, &pso));
+		
+		// Shader modules can be safely destroyed after pipeline creation
+		for (auto& shaderModule : shaderModules) {
+			vkDestroyShaderModule(device, shaderModule, nullptr);
+		}
+		shaderModules.clear();
 
-	void setpNext(void* pNext) {
-		this->pipelineCI.pNext = pNext;
-	}
+		bindPoint = createInfo.bindPoint;
+		// @todo: pstages
+		// @todo: set stypes for stuff != null
+	};
 
-	VkPipelineBindPoint getBindPoint() {
-		return bindPoint;
-	}
-
-	VkPipeline getHandle() {
-		return pso;
+	~Pipeline() {
+		vkDestroyPipeline(device, pso, nullptr);
 	}
 
 	operator VkPipeline() { return pso; };

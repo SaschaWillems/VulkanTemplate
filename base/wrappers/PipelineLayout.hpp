@@ -55,4 +55,8 @@ public:
 		assert(index < pushConstantRanges.size());
 		return pushConstantRanges[index];
 	}
+
+	operator VkPipelineLayout() const {
+		return handle;
+	}
 };

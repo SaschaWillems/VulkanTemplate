@@ -61,7 +61,7 @@ public:
 		vkCmdBindDescriptorSets(handle, VK_PIPELINE_BIND_POINT_GRAPHICS, layout->handle, firstSet, static_cast<uint32_t>(descSets.size()), descSets.data(), 0, nullptr);
 	}
 	void bindPipeline(Pipeline* pipeline) {
-		vkCmdBindPipeline(handle, pipeline->getBindPoint(), pipeline->getHandle());
+		vkCmdBindPipeline(handle, pipeline->bindPoint, *pipeline);
 	}
 	void draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance) {
 		vkCmdDraw(handle, vertexCount, instanceCount, firstVertex, firstInstance);
