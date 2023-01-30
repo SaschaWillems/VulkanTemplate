@@ -139,7 +139,7 @@ VkResult VulkanApplication::createInstance(bool enableValidation)
 
 std::string VulkanApplication::getWindowTitle()
 {
-	std::string device(deviceProperties.deviceName);
+	std::string device(vulkanDevice->properties.deviceName);
 	std::string windowTitle;
 	windowTitle = title + " - " + device;
 	return windowTitle;
@@ -181,7 +181,7 @@ void VulkanApplication::createPipelineCache()
 {
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
 	pipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-	VK_CHECK_RESULT(vkCreatePipelineCache(device, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
+	VK_CHECK_RESULT(vkCreatePipelineCache(*vulkanDevice, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
 }
 
 void VulkanApplication::createOverlay()
@@ -206,27 +206,10 @@ void VulkanApplication::prepare()
 	createCommandPool();
 	setupSwapChain();
 	createCommandBuffers();
-	createSynchronizationPrimitives();
 	setupDepthStencil();
 	createPipelineCache();
 	setupImages();
 	createOverlay();
-}
-
-VkPipelineShaderStageCreateInfo VulkanApplication::loadShader(std::string fileName, VkShaderStageFlagBits stage)
-{
-	VkPipelineShaderStageCreateInfo shaderStage = {};
-	shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	shaderStage.stage = stage;
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-	shaderStage.module = vks::tools::loadShader(androidApp->activity->assetManager, fileName.c_str(), device);
-#else
-	shaderStage.module = vks::tools::loadShader(fileName.c_str(), device);
-#endif
-	shaderStage.pName = "main"; // todo : make param
-	assert(shaderStage.module != VK_NULL_HANDLE);
-	shaderModules.push_back(shaderStage.module);
-	return shaderStage;
 }
 
 void VulkanApplication::renderFrame()
@@ -535,8 +518,8 @@ void VulkanApplication::renderLoop()
 	}
 #endif
 	// Flush device to make sure all resources can be freed
-	if (device != VK_NULL_HANDLE) {
-		vkDeviceWaitIdle(device);
+	if (*vulkanDevice != VK_NULL_HANDLE) {
+		vkDeviceWaitIdle(*vulkanDevice);
 	}
 }
 
@@ -563,7 +546,7 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_FirstUseEver);
 	ImGui::Begin("Application", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 	ImGui::TextUnformatted(title.c_str());
-	ImGui::TextUnformatted(deviceProperties.deviceName);
+	ImGui::TextUnformatted(vulkanDevice->properties.deviceName);
 	ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
@@ -675,27 +658,19 @@ VulkanApplication::~VulkanApplication()
 	swapChain->cleanup();
 	destroyCommandBuffers();
 
-	for (auto& shaderModule : shaderModules)
-	{
-		vkDestroyShaderModule(device, shaderModule, nullptr);
-	}
-	vkDestroyImageView(device, depthStencil.view, nullptr);
-	vkDestroyImage(device, depthStencil.image, nullptr);
-	vkFreeMemory(device, depthStencil.mem, nullptr);
+	vkDestroyImageView(*vulkanDevice, depthStencil.view, nullptr);
+	vkDestroyImage(*vulkanDevice, depthStencil.image, nullptr);
+	vkFreeMemory(*vulkanDevice, depthStencil.memory, nullptr);
 
-	vkDestroyPipelineCache(device, pipelineCache, nullptr);
+	vkDestroyPipelineCache(*vulkanDevice, pipelineCache, nullptr);
 
 	if (settings.sampleCount > VK_SAMPLE_COUNT_1_BIT) {
-		vkDestroyImage(device, multisampleTarget.color.image, nullptr);
-		vkDestroyImageView(device, multisampleTarget.color.view, nullptr);
-		vkFreeMemory(device, multisampleTarget.color.memory, nullptr);
-		vkDestroyImage(device, multisampleTarget.depth.image, nullptr);
-		vkDestroyImageView(device, multisampleTarget.depth.view, nullptr);
-		vkFreeMemory(device, multisampleTarget.depth.memory, nullptr);
-	}
-
-	for (auto& fence : waitFences) {
-		vkDestroyFence(device, fence, nullptr);
+		vkDestroyImage(*vulkanDevice, multisampleTarget.color.image, nullptr);
+		vkDestroyImageView(*vulkanDevice, multisampleTarget.color.view, nullptr);
+		vkFreeMemory(*vulkanDevice, multisampleTarget.color.memory, nullptr);
+		vkDestroyImage(*vulkanDevice, multisampleTarget.depth.image, nullptr);
+		vkDestroyImageView(*vulkanDevice, multisampleTarget.depth.view, nullptr);
+		vkFreeMemory(*vulkanDevice, multisampleTarget.depth.memory, nullptr);
 	}
 
 	// @todo: deletion queue
@@ -834,12 +809,7 @@ bool VulkanApplication::initVulkan()
 	}
 #endif
 
-	physicalDevice = physicalDevices[selectedDevice];
-
-	// Store properties (including limits), features and memory properties of the phyiscal device (so that examples can check against them)
-	vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-	vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
-	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &deviceMemoryProperties);
+	VkPhysicalDevice physicalDevice = physicalDevices[selectedDevice];
 
 	// Derived examples can override this to set actual features (based on above readings) to enable for logical device creation
 	getEnabledFeatures();
@@ -851,20 +821,20 @@ bool VulkanApplication::initVulkan()
 	// Vulkan device creation
 	// This is handled by a separate class that gets a logical device representation
 	// and encapsulates functions related to a device
+	// @todo: make both functions into a single ctor with designated initializers
 	vulkanDevice = new vks::VulkanDevice(physicalDevice);
 	VkResult res = vulkanDevice->createLogicalDevice(enabledDeviceExtensions, deviceCreatepNextChain);
 	if (res != VK_SUCCESS) {
 		vks::tools::exitFatal("Could not create Vulkan device: \n" + vks::tools::errorString(res), res);
 		return false;
 	}
-	device = vulkanDevice->logicalDevice;
-
-	// Get a graphics queue from the device
-	vkGetDeviceQueue(device, vulkanDevice->queueFamilyIndices.graphics, 0, &queue);
+	
+	queue = vulkanDevice->getQueue(QueueType::Graphics);
 
 	// Find a suitable depth format
-	VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
-	assert(validDepthFormat);
+	// @todo: move to device
+	depthFormat = vulkanDevice->getSupportedDepthFormat();
+	assert(depthFormat != VK_FORMAT_UNDEFINED);
 
 	swapChain = new SwapChain({
 		.instance = instance,
@@ -1887,19 +1857,10 @@ void VulkanApplication::mouseMoved(double x, double y, bool & handled) {}
 
 void VulkanApplication::buildCommandBuffers() {}
 
-void VulkanApplication::createSynchronizationPrimitives()
-{
-	// Wait fences to sync command buffer access
-	VkFenceCreateInfo fenceCreateInfo = vks::initializers::fenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT);
-	waitFences.resize(commandBuffers.size());
-	for (auto& fence : waitFences) {
-		VK_CHECK_RESULT(vkCreateFence(device, &fenceCreateInfo, nullptr, &fence));
-	}
-}
-
 void VulkanApplication::createCommandPool()
 {
-	commandPool = new CommandPool(device);
+	// @todo: rework
+	commandPool = new CommandPool(*vulkanDevice);
 	commandPool->setFlags(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	commandPool->setQueueFamilyIndex(swapChain->queueNodeIndex);
 	commandPool->create();
@@ -1918,16 +1879,16 @@ void VulkanApplication::setupDepthStencil()
 	imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
-	VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &depthStencil.image));
+	VK_CHECK_RESULT(vkCreateImage(*vulkanDevice, &imageCI, nullptr, &depthStencil.image));
 	VkMemoryRequirements memReqs{};
-	vkGetImageMemoryRequirements(device, depthStencil.image, &memReqs);
+	vkGetImageMemoryRequirements(*vulkanDevice, depthStencil.image, &memReqs);
 
 	VkMemoryAllocateInfo memAllloc{};
 	memAllloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memAllloc.allocationSize = memReqs.size;
 	memAllloc.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(device, &memAllloc, nullptr, &depthStencil.mem));
-	VK_CHECK_RESULT(vkBindImageMemory(device, depthStencil.image, depthStencil.mem, 0));
+	VK_CHECK_RESULT(vkAllocateMemory(*vulkanDevice, &memAllloc, nullptr, &depthStencil.memory));
+	VK_CHECK_RESULT(vkBindImageMemory(*vulkanDevice, depthStencil.image, depthStencil.memory, 0));
 
 	VkImageViewCreateInfo imageViewCI{};
 	imageViewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1943,7 +1904,7 @@ void VulkanApplication::setupDepthStencil()
 	if (depthFormat >= VK_FORMAT_D16_UNORM_S8_UINT) {
 		imageViewCI.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
 	}
-	VK_CHECK_RESULT(vkCreateImageView(device, &imageViewCI, nullptr, &depthStencil.view));
+	VK_CHECK_RESULT(vkCreateImageView(*vulkanDevice, &imageViewCI, nullptr, &depthStencil.view));
 }
 
 void VulkanApplication::setupImages()
@@ -1966,10 +1927,10 @@ void VulkanApplication::setupImages()
 		imageCI.samples = settings.sampleCount;
 		imageCI.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 		imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &multisampleTarget.color.image));
+		VK_CHECK_RESULT(vkCreateImage(*vulkanDevice, &imageCI, nullptr, &multisampleTarget.color.image));
 
 		VkMemoryRequirements memReqs;
-		vkGetImageMemoryRequirements(device, multisampleTarget.color.image, &memReqs);
+		vkGetImageMemoryRequirements(*vulkanDevice, multisampleTarget.color.image, &memReqs);
 		VkMemoryAllocateInfo memAllocInfo{};
 		memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		memAllocInfo.allocationSize = memReqs.size;
@@ -1978,8 +1939,8 @@ void VulkanApplication::setupImages()
 		if (!lazyMemTypePresent) {
 			memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		}
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &multisampleTarget.color.memory));
-		vkBindImageMemory(device, multisampleTarget.color.image, multisampleTarget.color.memory, 0);
+		VK_CHECK_RESULT(vkAllocateMemory(*vulkanDevice, &memAllocInfo, nullptr, &multisampleTarget.color.memory));
+		vkBindImageMemory(*vulkanDevice, multisampleTarget.color.image, multisampleTarget.color.memory, 0);
 
 		// Create image view for the MSAA target
 		VkImageViewCreateInfo imageViewCI{};
@@ -1994,7 +1955,7 @@ void VulkanApplication::setupImages()
 		imageViewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		imageViewCI.subresourceRange.levelCount = 1;
 		imageViewCI.subresourceRange.layerCount = 1;
-		VK_CHECK_RESULT(vkCreateImageView(device, &imageViewCI, nullptr, &multisampleTarget.color.view));
+		VK_CHECK_RESULT(vkCreateImageView(*vulkanDevice, &imageViewCI, nullptr, &multisampleTarget.color.view));
 
 		// Depth target
 		imageCI.imageType = VK_IMAGE_TYPE_2D;
@@ -2009,17 +1970,17 @@ void VulkanApplication::setupImages()
 		imageCI.samples = settings.sampleCount;
 		imageCI.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &multisampleTarget.depth.image));
+		VK_CHECK_RESULT(vkCreateImage(*vulkanDevice, &imageCI, nullptr, &multisampleTarget.depth.image));
 
-		vkGetImageMemoryRequirements(device, multisampleTarget.depth.image, &memReqs);
+		vkGetImageMemoryRequirements(*vulkanDevice, multisampleTarget.depth.image, &memReqs);
 		memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		memAllocInfo.allocationSize = memReqs.size;
 		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT, &lazyMemTypePresent);
 		if (!lazyMemTypePresent) {
 			memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		}
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &multisampleTarget.depth.memory));
-		vkBindImageMemory(device, multisampleTarget.depth.image, multisampleTarget.depth.memory, 0);
+		VK_CHECK_RESULT(vkAllocateMemory(*vulkanDevice, &memAllocInfo, nullptr, &multisampleTarget.depth.memory));
+		vkBindImageMemory(*vulkanDevice, multisampleTarget.depth.image, multisampleTarget.depth.memory, 0);
 
 		// Create image view for the MSAA target
 		imageViewCI.image = multisampleTarget.depth.image;
@@ -2032,7 +1993,7 @@ void VulkanApplication::setupImages()
 		imageViewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 		imageViewCI.subresourceRange.levelCount = 1;
 		imageViewCI.subresourceRange.layerCount = 1;
-		VK_CHECK_RESULT(vkCreateImageView(device, &imageViewCI, nullptr, &multisampleTarget.depth.view));
+		VK_CHECK_RESULT(vkCreateImageView(*vulkanDevice, &imageViewCI, nullptr, &multisampleTarget.depth.view));
 	}
 }
 
@@ -2049,7 +2010,7 @@ void VulkanApplication::windowResize()
 	prepared = false;
 
 	// Ensure all operations on the device have been finished before destroying resources
-	vkDeviceWaitIdle(device);
+	vkDeviceWaitIdle(*vulkanDevice);
 
 	// Recreate swap chain
 	width = destWidth;
@@ -2057,9 +2018,9 @@ void VulkanApplication::windowResize()
 	setupSwapChain();
 
 	// Recreate the frame buffers
-	vkDestroyImageView(device, depthStencil.view, nullptr);
-	vkDestroyImage(device, depthStencil.image, nullptr);
-	vkFreeMemory(device, depthStencil.mem, nullptr);
+	vkDestroyImageView(*vulkanDevice, depthStencil.view, nullptr);
+	vkDestroyImage(*vulkanDevice, depthStencil.image, nullptr);
+	vkFreeMemory(*vulkanDevice, depthStencil.memory, nullptr);
 	setupDepthStencil();	
 	setupImages();
 
@@ -2073,7 +2034,7 @@ void VulkanApplication::windowResize()
 	createCommandBuffers();
 	buildCommandBuffers();
 
-	vkDeviceWaitIdle(device);
+	vkDeviceWaitIdle(*vulkanDevice);
 
 	if ((width > 0.0f) && (height > 0.0f)) {
 		camera.updateAspectRatio((float)width / (float)height);
@@ -2157,8 +2118,8 @@ void VulkanApplication::prepareFrame(VulkanFrameObjects& frame)
 {
 
 	// Ensure command buffer execution has finished
-	VK_CHECK_RESULT(vkWaitForFences(device, 1, &frame.renderCompleteFence, VK_TRUE, UINT64_MAX));
-	VK_CHECK_RESULT(vkResetFences(device, 1, &frame.renderCompleteFence));
+	VK_CHECK_RESULT(vkWaitForFences(*vulkanDevice, 1, &frame.renderCompleteFence, VK_TRUE, UINT64_MAX));
+	VK_CHECK_RESULT(vkResetFences(*vulkanDevice, 1, &frame.renderCompleteFence));
 	// Acquire the next image from the swap chain
 	VkResult result = swapChain->acquireNextImage(frame.presentCompleteSemaphore, &currentBuffer);
 	// @todo: rework after removing currentBuffer
@@ -2176,7 +2137,7 @@ void VulkanApplication::submitFrame(VulkanFrameObjects& frame)
 {
 	// Submit command buffer to queue
 	VkPipelineStageFlags submitWaitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	submitInfo = vks::initializers::submitInfo();
+	VkSubmitInfo submitInfo = vks::initializers::submitInfo();
 	submitInfo.pWaitDstStageMask = &submitWaitStages;
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = &frame.presentCompleteSemaphore;
@@ -2222,17 +2183,17 @@ void VulkanApplication::createBaseFrameObjects(VulkanFrameObjects& frame)
 		.pool = commandPool
 	});
 	VkFenceCreateInfo fenceCreateInfo = vks::initializers::fenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT);
-	VK_CHECK_RESULT(vkCreateFence(device, &fenceCreateInfo, nullptr, &frame.renderCompleteFence));
+	VK_CHECK_RESULT(vkCreateFence(*vulkanDevice, &fenceCreateInfo, nullptr, &frame.renderCompleteFence));
 	VkSemaphoreCreateInfo semaphoreCreateInfo = vks::initializers::semaphoreCreateInfo();
-	VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &frame.presentCompleteSemaphore));
-	VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &frame.renderCompleteSemaphore));
+	VK_CHECK_RESULT(vkCreateSemaphore(*vulkanDevice, &semaphoreCreateInfo, nullptr, &frame.presentCompleteSemaphore));
+	VK_CHECK_RESULT(vkCreateSemaphore(*vulkanDevice, &semaphoreCreateInfo, nullptr, &frame.renderCompleteSemaphore));
 }
 
 void VulkanApplication::destroyBaseFrameObjects(VulkanFrameObjects& frame)
 {
-	vkDestroyFence(device, frame.renderCompleteFence, nullptr);
-	vkDestroySemaphore(device, frame.presentCompleteSemaphore, nullptr);
-	vkDestroySemaphore(device, frame.renderCompleteSemaphore, nullptr);
+	vkDestroyFence(*vulkanDevice, frame.renderCompleteFence, nullptr);
+	vkDestroySemaphore(*vulkanDevice, frame.presentCompleteSemaphore, nullptr);
+	vkDestroySemaphore(*vulkanDevice, frame.renderCompleteSemaphore, nullptr);
 }
 
 void VulkanApplication::nextFrame()

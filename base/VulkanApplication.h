@@ -63,6 +63,12 @@ struct VulkanFrameObjects
 	VkSemaphore presentCompleteSemaphore;
 };
 
+struct ImageAttachment {
+	VkImage image;
+	VkImageView view;
+	VkDeviceMemory memory;
+};
+
 class VulkanApplication
 {
 private:	
@@ -81,59 +87,24 @@ private:
 	VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{};
 protected:
 	struct MultisampleTarget {
-		struct {
-			VkImage image;
-			VkImageView view;
-			VkDeviceMemory memory;
-		} color;
-		struct {
-			VkImage image;
-			VkImageView view;
-			VkDeviceMemory memory;
-		} depth;
+		ImageAttachment color;
+		ImageAttachment depth;
 	} multisampleTarget;
-	// Frame counter to display fps
+	ImageAttachment depthStencil;
 	uint32_t frameCounter = 0;
 	uint32_t lastFPS = 0;
 	std::chrono::time_point<std::chrono::high_resolution_clock> lastTimestamp;
-	// Vulkan instance, stores all per-application states
 	VkInstance instance;
-	// Physical device (GPU) that Vulkan will ise
-	VkPhysicalDevice physicalDevice;
-	// Stores physical device properties (for e.g. checking device limits)
-	VkPhysicalDeviceProperties deviceProperties;
-	// Stores the features available on the selected physical device (for e.g. checking if a feature is available)
-	VkPhysicalDeviceFeatures deviceFeatures;
-	// Stores all available memory (type) properties for the physical device
-	VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
-	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
 	std::vector<const char*> enabledDeviceExtensions;
 	std::vector<const char*> enabledInstanceExtensions;
-	/** @brief Optional pNext structure for passing extension structures to device creation */
 	void* deviceCreatepNextChain = nullptr;
-	/** @brief Logical device, application's view of the physical device (GPU) */
-	VkDevice device;
-	// Handle to the device graphics queue that command buffers are submitted to
-	VkQueue queue;
-	// Depth buffer format (selected during Vulkan initialization)
+	VkQueue queue; // Use from device
 	VkFormat depthFormat;
-	/** @brief Pipeline stages used to wait at for graphics queue submissions */
-	VkPipelineStageFlags submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	// Contains command buffers and semaphores to be presented to the queue
-	VkSubmitInfo submitInfo;
 	CommandPool* commandPool;
 	std::vector<CommandBuffer*> commandBuffers;
-	// Active frame buffer index
 	uint32_t currentBuffer = 0;
-	// List of shader modules created (stored for cleanup)
-	// @todo: remove/replace
-	std::vector<VkShaderModule> shaderModules;
-	// Pipeline cache object
 	VkPipelineCache pipelineCache;
-	// Wraps the swap chain to present images (framebuffers) to the windowing system
 	SwapChain* swapChain;
-	std::vector<VkFence> waitFences;
-	// @todo
 	uint32_t frameIndex = 0;
 	uint32_t renderAhead = 2;
 public: 
@@ -143,15 +114,11 @@ public:
 
 	vks::UIOverlay* overlay{ nullptr };
 
-	/** @brief Last frame time measured using a high performance timer (if available) */
 	float frameTimer = 1.0f;
-	/** @brief Returns os specific base asset path (for shaders, models, textures) */
 	const std::string getAssetPath();
 
-	/** @brief Encapsulated physical and logical vulkan device */
 	vks::VulkanDevice *vulkanDevice;
 
-	/** @brief Example settings that can be changed e.g. by command line arguments */
 	struct Settings {
 		bool validation = false;
 		bool fullscreen = false;
@@ -165,17 +132,12 @@ public:
 
 	static std::vector<const char*> args;
 
-	// Defines a frame rate independent timer value clamped from -1.0...1.0
-	// For use in animations, rotations, etc.
 	float timer = 0.0f;
-	// Multiplier for speeding up (or slowing down) the global timer
 	float timerSpeed = 0.25f;
 	
 	bool paused = false;
 
-	// Use to adjust mouse rotation speed
 	float rotationSpeed = 1.0f;
-	// Use to adjust mouse zoom speed
 	float zoomSpeed = 1.0f;
 
 	Camera camera;
@@ -187,13 +149,6 @@ public:
 	std::string title = "Vulkan Template";
 	std::string name = "VulkanTemplate";
 	uint32_t apiVersion = VK_API_VERSION_1_0;
-
-	struct 
-	{
-		VkImage image;
-		VkDeviceMemory mem;
-		VkImageView view;
-	} depthStencil;
 
 	struct {
 		glm::vec2 axisLeft = glm::vec2(0.0f);
@@ -342,8 +297,6 @@ public:
 	// all command buffers that may reference this
 	virtual void buildCommandBuffers();
 
-	void createSynchronizationPrimitives();
-
 	// Creates a new (graphics) command pool object storing command buffers
 	void createCommandPool();
 	// Setup default depth and stencil views
@@ -372,9 +325,6 @@ public:
 	// Prepare commonly used Vulkan functions
 	virtual void prepare();
 
-	// Load a SPIR-V shader
-	VkPipelineShaderStageCreateInfo loadShader(std::string fileName, VkShaderStageFlagBits stage);
-	
 	// Start the main render loop
 	void renderLoop();
 

@@ -40,8 +40,8 @@ public:
 		VulkanContext::graphicsQueue = queue;
 		VulkanContext::device = vulkanDevice;
 		// We try to get a transfer queue for background uploads
-		if (vulkanDevice->queueFamilyIndices.graphics != vulkanDevice->queueFamilyIndices.transfer) {
-			vkGetDeviceQueue(device, vulkanDevice->queueFamilyIndices.transfer, 0, &VulkanContext::copyQueue);
+		if (vulkanDevice->hasDedicatedTransferQueue) {
+			VulkanContext::copyQueue = vulkanDevice->getQueue(QueueType::Transfer);
 		} else {
 			VulkanContext::copyQueue = queue;
 		}
