@@ -1,12 +1,12 @@
 /*
-* Class wrapping access to the swap chain
-* 
-* A swap chain is a collection of framebuffers used for rendering and presentation to the windowing system
-*
-* Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de
-*
-* This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
-*/
+ * Class wrapping access to the swap chain
+ * 
+ * A swap chain is a collection of framebuffers used for rendering and presentation to the windowing system
+ *
+ * Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de
+ *
+ * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
+ */
 
 #pragma once
 
@@ -30,24 +30,33 @@ typedef struct _SwapChainBuffer {
 	VkImageView view;
 } SwapChainBuffer;
 
-class VulkanSwapChain
+struct SwapChainCreateInfo {
+	VkInstance instance{ VK_NULL_HANDLE };
+	vks::VulkanDevice& device;
+};
+
+class SwapChain
 {
 private: 
 	VkInstance instance;
-	VkDevice device;
-	VkPhysicalDevice physicalDevice;
+	vks::VulkanDevice& device;
+	//VkDevice device;
+	//VkPhysicalDevice physicalDevice;
 	VkSurfaceKHR surface;
 public:
 	VkFormat colorFormat;
 	VkColorSpaceKHR colorSpace;
-	/** @brief Handle to the current swap chain, required for recreation */
-	VkSwapchainKHR swapChain = VK_NULL_HANDLE;	
+	VkSwapchainKHR swapChain = VK_NULL_HANDLE;// @todo: handle
 	uint32_t imageCount;
-	std::vector<VkImage> images;
+	std::vector<VkImage> images; // why? see swapchainbuffer which has image
 	std::vector<SwapChainBuffer> buffers;
-	/** @brief Queue family index of the detected graphics and presenting device queue */
 	uint32_t queueNodeIndex = UINT32_MAX;
 	uint32_t currentImageIndex = 0;
+
+	SwapChain(SwapChainCreateInfo createInfo) : device(createInfo.device) {
+		instance = createInfo.instance;
+		device = device;
+	}
 
 	/** @brief Creates the platform specific surface abstraction of the native platform window used for presentation */	
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
@@ -114,11 +123,11 @@ public:
 
 		// Get available queue family properties
 		uint32_t queueCount;
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueCount, NULL);
+		vkGetPhysicalDeviceQueueFamilyProperties(device.physicalDevice, &queueCount, nullptr);
 		assert(queueCount >= 1);
 
 		std::vector<VkQueueFamilyProperties> queueProps(queueCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueCount, queueProps.data());
+		vkGetPhysicalDeviceQueueFamilyProperties(device.physicalDevice, &queueCount, queueProps.data());
 
 		// Iterate over each queue to learn whether it supports presenting:
 		// Find a queue with present support
@@ -126,7 +135,7 @@ public:
 		std::vector<VkBool32> supportsPresent(queueCount);
 		for (uint32_t i = 0; i < queueCount; i++) 
 		{
-			vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &supportsPresent[i]);
+			vkGetPhysicalDeviceSurfaceSupportKHR(device.physicalDevice, i, surface, &supportsPresent[i]);
 		}
 
 		// Search for a graphics and a present queue in the array of queue
@@ -180,11 +189,11 @@ public:
 
 		// Get list of supported surface formats
 		uint32_t formatCount;
-		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, NULL));
+		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(device.physicalDevice, surface, &formatCount, NULL));
 		assert(formatCount > 0);
 
 		std::vector<VkSurfaceFormatKHR> deviceSurfaceFormats(formatCount);
-		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, deviceSurfaceFormats.data()));
+		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(device.physicalDevice, surface, &formatCount, deviceSurfaceFormats.data()));
 
 #if defined(SRGB)
 		// We'll try to select a sRGB surface format and colorspace
@@ -248,21 +257,6 @@ public:
 
 	}
 
-	/**
-	* Set instance, physical and logical device to use for the swapchain
-	* 
-	* @param instance Vulkan instance to use
-	* @param physicalDevice Physical device used to query properties and formats relevant to the swapchain
-	* @param device Logical representation of the device to create the swapchain for
-	*
-	*/
-	void connect(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device)
-	{
-		this->instance = instance;
-		this->physicalDevice = physicalDevice;
-		this->device = device;
-	}
-
 	/** 
 	* Create the swapchain and get it's images with given width and height
 	* 
@@ -276,15 +270,15 @@ public:
 
 		// Get physical device surface properties and formats
 		VkSurfaceCapabilitiesKHR surfCaps;
-		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfCaps));
+		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device.physicalDevice, surface, &surfCaps));
 
 		// Get available present modes
 		uint32_t presentModeCount;
-		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, NULL));
+		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(device.physicalDevice, surface, &presentModeCount, NULL));
 		assert(presentModeCount > 0);
 
 		std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, presentModes.data()));
+		VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(device.physicalDevice, surface, &presentModeCount, presentModes.data()));
 
 		VkExtent2D swapchainExtent = {};
 		// If width (and height) equals the special value 0xFFFFFFFF, the size of the surface will be set by the swapchain

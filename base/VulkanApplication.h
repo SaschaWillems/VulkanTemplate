@@ -131,14 +131,7 @@ protected:
 	// Pipeline cache object
 	VkPipelineCache pipelineCache;
 	// Wraps the swap chain to present images (framebuffers) to the windowing system
-	VulkanSwapChain swapChain;
-	// Synchronization semaphores
-	struct {
-		// Swap chain image presentation
-		VkSemaphore presentComplete;
-		// Command buffer submission and execution
-		VkSemaphore renderComplete;
-	} semaphores;
+	SwapChain* swapChain;
 	std::vector<VkFence> waitFences;
 	// @todo
 	uint32_t frameIndex = 0;

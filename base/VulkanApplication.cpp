@@ -161,7 +161,7 @@ const std::string VulkanApplication::getAssetPath()
 
 void VulkanApplication::createCommandBuffers()
 {
-	commandBuffers.resize(swapChain.imageCount);
+	commandBuffers.resize(swapChain->imageCount);
 	for (auto &commandBuffer : commandBuffers) {
 		commandBuffer = new CommandBuffer({
 			.device = *vulkanDevice,
@@ -190,7 +190,7 @@ void VulkanApplication::createOverlay()
 		.device = *vulkanDevice,
 		.queue = queue,
 		.pipelineCache = pipelineCache,
-		.colorFormat = swapChain.colorFormat,
+		.colorFormat = swapChain->colorFormat,
 		.depthFormat = depthFormat,
 		.rasterizationSamples = settings.sampleCount,
 		.fontFileName = "Roboto-Medium.ttf",
@@ -672,7 +672,7 @@ VulkanApplication::VulkanApplication(bool enableValidation)
 VulkanApplication::~VulkanApplication()
 {
 	// Clean up Vulkan resources
-	swapChain.cleanup();
+	swapChain->cleanup();
 	destroyCommandBuffers();
 
 	for (auto& shaderModule : shaderModules)
@@ -694,8 +694,6 @@ VulkanApplication::~VulkanApplication()
 		vkFreeMemory(device, multisampleTarget.depth.memory, nullptr);
 	}
 
-	vkDestroySemaphore(device, semaphores.presentComplete, nullptr);
-	vkDestroySemaphore(device, semaphores.renderComplete, nullptr);
 	for (auto& fence : waitFences) {
 		vkDestroyFence(device, fence, nullptr);
 	}
@@ -868,26 +866,10 @@ bool VulkanApplication::initVulkan()
 	VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
 	assert(validDepthFormat);
 
-	swapChain.connect(instance, physicalDevice, device);
-
-	// Create synchronization objects
-	VkSemaphoreCreateInfo semaphoreCreateInfo = vks::initializers::semaphoreCreateInfo();
-	// Create a semaphore used to synchronize image presentation
-	// Ensures that the image is displayed before we start submitting new commands to the queu
-	VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &semaphores.presentComplete));
-	// Create a semaphore used to synchronize command submission
-	// Ensures that the image is not presented until all commands have been sumbitted and executed
-	VK_CHECK_RESULT(vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &semaphores.renderComplete));
-
-	// Set up submit info structure
-	// Semaphores will stay the same during application lifetime
-	// Command buffer submission info is set by each example
-	submitInfo = vks::initializers::submitInfo();
-	submitInfo.pWaitDstStageMask = &submitPipelineStages;
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &semaphores.presentComplete;
-	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = &semaphores.renderComplete;
+	swapChain = new SwapChain({
+		.instance = instance,
+		.device = *vulkanDevice,
+	});
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	// Get Android device name and manufacturer (to display along GPU name)
@@ -1358,7 +1340,7 @@ void VulkanApplication::handleAppCommand(android_app * app, int32_t cmd)
 		// Window is hidden or closed, clean up resources
 		LOGD("APP_CMD_TERM_WINDOW");
 		if (vulkanExample->prepared) {
-			vulkanExample->swapChain.cleanup();
+			vulkanExample->swapChain->cleanup();
 		}
 		break;
 	}
@@ -1919,7 +1901,7 @@ void VulkanApplication::createCommandPool()
 {
 	commandPool = new CommandPool(device);
 	commandPool->setFlags(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-	commandPool->setQueueFamilyIndex(swapChain.queueNodeIndex);
+	commandPool->setQueueFamilyIndex(swapChain->queueNodeIndex);
 	commandPool->create();
 }
 
@@ -1973,7 +1955,7 @@ void VulkanApplication::setupImages()
 		VkImageCreateInfo imageCI{};
 		imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageCI.imageType = VK_IMAGE_TYPE_2D;
-		imageCI.format = swapChain.colorFormat;
+		imageCI.format = swapChain->colorFormat;
 		imageCI.extent.width = width;
 		imageCI.extent.height = height;
 		imageCI.extent.depth = 1;
@@ -2004,7 +1986,7 @@ void VulkanApplication::setupImages()
 		imageViewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		imageViewCI.image = multisampleTarget.color.image;
 		imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		imageViewCI.format = swapChain.colorFormat;
+		imageViewCI.format = swapChain->colorFormat;
 		imageViewCI.components.r = VK_COMPONENT_SWIZZLE_R;
 		imageViewCI.components.g = VK_COMPONENT_SWIZZLE_G;
 		imageViewCI.components.b = VK_COMPONENT_SWIZZLE_B;
@@ -2150,23 +2132,23 @@ void VulkanApplication::windowResized()
 void VulkanApplication::initSwapchain()
 {
 #if defined(_WIN32)
-	swapChain.initSurface(windowInstance, window);
+	swapChain->initSurface(windowInstance, window);
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)	
-	swapChain.initSurface(androidApp->window);
+	swapChain->initSurface(androidApp->window);
 #elif (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK))
-	swapChain.initSurface(view);
+	swapChain->initSurface(view);
 #elif defined(_DIRECT2DISPLAY)
-	swapChain.initSurface(width, height);
+	swapChain->initSurface(width, height);
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
-	swapChain.initSurface(display, surface);
+	swapChain->initSurface(display, surface);
 #elif defined(VK_USE_PLATFORM_XCB_KHR)
-	swapChain.initSurface(connection, window);
+	swapChain->initSurface(connection, window);
 #endif
 }
 
 void VulkanApplication::setupSwapChain()
 {
-	swapChain.create(&width, &height, settings.vsync);
+	swapChain->create(&width, &height, settings.vsync);
 }
 
 void VulkanApplication::OnUpdateOverlay(vks::UIOverlay &overlay) {}
@@ -2178,9 +2160,9 @@ void VulkanApplication::prepareFrame(VulkanFrameObjects& frame)
 	VK_CHECK_RESULT(vkWaitForFences(device, 1, &frame.renderCompleteFence, VK_TRUE, UINT64_MAX));
 	VK_CHECK_RESULT(vkResetFences(device, 1, &frame.renderCompleteFence));
 	// Acquire the next image from the swap chain
-	VkResult result = swapChain.acquireNextImage(frame.presentCompleteSemaphore, &currentBuffer);
+	VkResult result = swapChain->acquireNextImage(frame.presentCompleteSemaphore, &currentBuffer);
 	// @todo: rework after removing currentBuffer
-	swapChain.currentImageIndex = currentBuffer;
+	swapChain->currentImageIndex = currentBuffer;
 	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE) or no longer optimal for presentation (SUBOPTIMAL)
 	if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR)) {
 		windowResize();
@@ -2205,7 +2187,7 @@ void VulkanApplication::submitFrame(VulkanFrameObjects& frame)
 	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, frame.renderCompleteFence));
 
 	// Present image to queue
-	VkResult result = swapChain.queuePresent(queue, currentBuffer, frame.renderCompleteSemaphore);
+	VkResult result = swapChain->queuePresent(queue, currentBuffer, frame.renderCompleteSemaphore);
 	if (!((result == VK_SUCCESS) || (result == VK_SUBOPTIMAL_KHR))) {
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			// Swap chain is no longer compatible with the surface and needs to be recreated

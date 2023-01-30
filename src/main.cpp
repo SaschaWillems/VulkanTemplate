@@ -54,7 +54,7 @@ public:
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
 		pipelineRenderingCreateInfo.colorAttachmentCount = 1;
-		pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapChain.colorFormat;
+		pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapChain->colorFormat;
 		pipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
 		pipelineRenderingCreateInfo.stencilAttachmentFormat = depthFormat;
 
@@ -127,7 +127,7 @@ public:
 
 		// Transition color and depth images for drawing
 		cb->insertImageMemoryBarrier(
-			swapChain.buffers[swapChain.currentImageIndex].image,
+			swapChain->buffers[swapChain->currentImageIndex].image,
 			0,
 			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			VK_IMAGE_LAYOUT_UNDEFINED,
@@ -148,14 +148,14 @@ public:
 		// New structures are used to define the attachments used in dynamic rendering
 		colorAttachment = {};
 		colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-		colorAttachment.imageView = multiSampling ? multisampleTarget.color.view : swapChain.buffers[swapChain.currentImageIndex].view;
+		colorAttachment.imageView = multiSampling ? multisampleTarget.color.view : swapChain->buffers[swapChain->currentImageIndex].view;
 		colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		colorAttachment.clearValue.color = { 0.0f,0.0f,0.0f,0.0f };
 		if (multiSampling) {
 			colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
-			colorAttachment.resolveImageView = swapChain.buffers[swapChain.currentImageIndex].view;
+			colorAttachment.resolveImageView = swapChain->buffers[swapChain->currentImageIndex].view;
 			colorAttachment.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
 		}
 
@@ -197,7 +197,7 @@ public:
 
 		// Transition color image for presentation
 		cb->insertImageMemoryBarrier(
-			swapChain.buffers[swapChain.currentImageIndex].image,
+			swapChain->buffers[swapChain->currentImageIndex].image,
 			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			0,
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
