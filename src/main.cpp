@@ -11,6 +11,8 @@ class Application : public VulkanApplication {
 private:
 	struct FrameObjects : public VulkanFrameObjects {};
 	std::vector<FrameObjects> frameObjects;
+	Pipeline* testPipeline;
+	PipelineLayout* testPipelineLayout;
 public:	
 	Application() : VulkanApplication(false) {
 		apiVersion = VK_API_VERSION_1_3;
@@ -49,29 +51,64 @@ public:
 			createBaseFrameObjects(frame);
 		}
 
-		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
-		VkPipelineRasterizationStateCreateInfo rasterizationState = vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_CLOCKWISE, 0);
-		VkPipelineColorBlendAttachmentState blendAttachmentState = vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
-		VkPipelineColorBlendStateCreateInfo colorBlendState = vks::initializers::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
-		VkPipelineDepthStencilStateCreateInfo depthStencilState = vks::initializers::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-		VkPipelineViewportStateCreateInfo viewportState = vks::initializers::pipelineViewportStateCreateInfo(1, 1, 0);
-		VkPipelineMultisampleStateCreateInfo multisampleState = vks::initializers::pipelineMultisampleStateCreateInfo(settings.sampleCount, 0);
-		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_BLEND_CONSTANTS };
-		VkPipelineDynamicStateCreateInfo dynamicState = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
+		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+		pipelineRenderingCreateInfo.colorAttachmentCount = 1;
+		pipelineRenderingCreateInfo.pColorAttachmentFormats = &swapChain.colorFormat;
+		pipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
+		pipelineRenderingCreateInfo.stencilAttachmentFormat = depthFormat;
 
-		// Empty state (no input)
-		VkPipelineVertexInputStateCreateInfo vertexInputStateEmpty = vks::initializers::pipelineVertexInputStateCreateInfo();
+		VkPipelineColorBlendAttachmentState blendAttachmentState{};
+		blendAttachmentState.colorWriteMask = 0xf;
 
-		VkGraphicsPipelineCreateInfo pipelineCI{};
-		pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipelineCI.pVertexInputState = &vertexInputStateEmpty;
-		pipelineCI.pInputAssemblyState = &inputAssemblyState;
-		pipelineCI.pRasterizationState = &rasterizationState;
-		pipelineCI.pColorBlendState = &colorBlendState;
-		pipelineCI.pMultisampleState = &multisampleState;
-		pipelineCI.pViewportState = &viewportState;
-		pipelineCI.pDepthStencilState = &depthStencilState;
-		pipelineCI.pDynamicState = &dynamicState;
+		testPipelineLayout = new PipelineLayout({
+			.device = *vulkanDevice,
+		});
+
+		testPipeline = new Pipeline({
+			.device = *vulkanDevice,
+			.shaders = {
+				getAssetPath() + "shaders/fullscreen.vert.spv",
+				getAssetPath() + "shaders/fullscreen.frag.spv"
+			},
+			.cache = pipelineCache,
+			.layout = *testPipelineLayout,
+			.pNext = &pipelineRenderingCreateInfo,
+			.inputAssemblyState = {
+				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+			},
+			.viewportState = {
+				.viewportCount = 1,
+				.scissorCount = 1
+			},
+			.rasterizationState = {
+				.polygonMode = VK_POLYGON_MODE_FILL,
+				.cullMode = VK_CULL_MODE_NONE,
+				.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+				.lineWidth = 1.0f
+			},
+			.multisampleState = {
+				.rasterizationSamples = settings.sampleCount,
+			},
+			.depthStencilState = {
+				.depthTestEnable = VK_FALSE,
+				.depthWriteEnable = VK_FALSE,
+				.front = {
+					.compareOp = VK_COMPARE_OP_ALWAYS,
+				},
+				.back = {
+					.compareOp = VK_COMPARE_OP_ALWAYS,
+				}
+			},
+			.colorBlendState = {
+				.attachmentCount = 1,
+				.pAttachments = &blendAttachmentState
+			},
+			.dynamicState = {
+				DynamicState::Scissor,
+				DynamicState::Viewport
+			}
+		});
 
 		prepared = true;
 	}
@@ -150,7 +187,8 @@ public:
 		cb->setViewport(0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
 		cb->setScissor(0, 0, width, height);
 
-		// @todo: draw scene here
+		cb->bindPipeline(testPipeline);
+		cb->draw(3, 1, 0, 0);
 
 		if (overlay->visible) {
 			overlay->draw(cb, getCurrentFrameIndex());

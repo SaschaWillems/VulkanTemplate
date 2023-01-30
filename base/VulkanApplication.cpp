@@ -163,9 +163,10 @@ void VulkanApplication::createCommandBuffers()
 {
 	commandBuffers.resize(swapChain.imageCount);
 	for (auto &commandBuffer : commandBuffers) {
-		commandBuffer = new CommandBuffer(device);
-		commandBuffer->setPool(commandPool);
-		commandBuffer->create();
+		commandBuffer = new CommandBuffer({
+			.device = *vulkanDevice,
+			.pool = commandPool
+		});
 	}
 }
 
@@ -173,53 +174,6 @@ void VulkanApplication::destroyCommandBuffers()
 {
 	for (auto& commandBuffer : commandBuffers) {
 		delete(commandBuffer);
-	}
-}
-
-// @todo: remove
-VkCommandBuffer VulkanApplication::createCommandBuffer(VkCommandBufferLevel level, bool begin)
-{
-	VkCommandBuffer cmdBuffer;
-
-	VkCommandBufferAllocateInfo cmdBufAllocateInfo =
-		vks::initializers::commandBufferAllocateInfo(
-			commandPool->handle,
-			level,
-			1);
-
-	VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &cmdBufAllocateInfo, &cmdBuffer));
-
-	// If requested, also start the new command buffer
-	if (begin)
-	{
-		VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
-		VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
-	}
-
-	return cmdBuffer;
-}
-
-// @todo: remove
-void VulkanApplication::flushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free)
-{
-	if (commandBuffer == VK_NULL_HANDLE)
-	{
-		return;
-	}
-	
-	VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
-
-	VkSubmitInfo submitInfo = {};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
-
-	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
-	VK_CHECK_RESULT(vkQueueWaitIdle(queue));
-
-	if (free)
-	{
-		vkFreeCommandBuffers(device, commandPool->handle, 1, &commandBuffer);
 	}
 }
 
@@ -629,7 +583,6 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 	//Check if the overlay's index and vertex buffers needs to be updated (recreated), e.g. because new elements are visible and indices or vertices require additional buffer space
    //@todo: remove?
 	if (overlay->bufferUpdateRequired(frameIndex)) {
-		std::cout << "UI buffers need to be recreated\n";
 		// Ensure all command buffers have finished execution, so we don't change vertex and/or index buffers still in use
 		// @todo: wait for fences instead?
 		vkQueueWaitIdle(queue);
@@ -2235,19 +2188,6 @@ void VulkanApplication::prepareFrame(VulkanFrameObjects& frame)
 	else {
 		VK_CHECK_RESULT(result);
 	}
-	//	 @todo: check if ui overlay needs to be updated
-		//if (settings.overlay) {
-		//	updateOverlay();
-		//	if (overlay->bufferUpdateRequired()) {
-		//		std::cout << "UI buffers need to be recreated\n";
-		//		// Ensure all command buffers have finished execution, so we don't change vertex and/or index buffers still in use
-		//		// @todo: wait for fences instead?
-		//		//vkQueueWaitIdle(queue);
-		//		overlay->allocateBuffers();
-		//	}
-		//	// @todo: cap update rate
-		//	overlay->updateBuffers();
-		//}
 }
 
 void VulkanApplication::submitFrame(VulkanFrameObjects& frame)
@@ -2295,11 +2235,10 @@ uint32_t VulkanApplication::getCurrentFrameIndex()
 
 void VulkanApplication::createBaseFrameObjects(VulkanFrameObjects& frame)
 {
-	VkCommandBufferAllocateInfo cmdBufAllocateInfo = vks::initializers::commandBufferAllocateInfo(commandPool->handle, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1);
-	frame.commandBuffer = new CommandBuffer(device);
-	frame.commandBuffer->setPool(commandPool);
-	frame.commandBuffer->create();
-	//VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &cmdBufAllocateInfo, &frame.commandBuffer));
+	frame.commandBuffer = new CommandBuffer({
+		.device = *vulkanDevice,
+		.pool = commandPool
+	});
 	VkFenceCreateInfo fenceCreateInfo = vks::initializers::fenceCreateInfo(VK_FENCE_CREATE_SIGNALED_BIT);
 	VK_CHECK_RESULT(vkCreateFence(device, &fenceCreateInfo, nullptr, &frame.renderCompleteFence));
 	VkSemaphoreCreateInfo semaphoreCreateInfo = vks::initializers::semaphoreCreateInfo();

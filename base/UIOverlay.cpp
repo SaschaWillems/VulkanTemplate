@@ -231,8 +231,6 @@ namespace vks
 		blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 		blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 
-		VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(PushConstBlock), 0);
-
 		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 
 		pipelineLayout = new PipelineLayout({
@@ -285,9 +283,9 @@ namespace vks
 				.attachmentCount = 1,
 				.pAttachments = &blendAttachmentState
 			},
-			.dynamicState = {
-				.dynamicStateCount = (uint32_t)(dynamicStateEnables.size()),
-				.pDynamicStates = dynamicStateEnables.data()
+			.dynamicState = { 
+				DynamicState::Scissor, 
+				DynamicState::Viewport 
 			}
 		});
 	}

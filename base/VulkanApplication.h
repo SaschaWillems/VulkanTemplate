@@ -373,13 +373,6 @@ public:
 	// May be necessary during runtime if options are toggled 
 	void destroyCommandBuffers();
 
-	// Command buffer creation
-	// Creates and returns a new command buffer
-	VkCommandBuffer createCommandBuffer(VkCommandBufferLevel level, bool begin);
-	// End the command buffer, submit it to the queue and free (if requested)
-	// Note : Waits for the queue to become idle
-	void flushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free);
-
 	void createPipelineCache();
 	void createOverlay();
 
