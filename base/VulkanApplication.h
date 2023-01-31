@@ -290,9 +290,6 @@ public:
 	// Can be overriden in derived class to setup a custom framebuffer (e.g. for MSAA)
 	virtual void setupImages();
 
-	/** @brief (Virtual) Called after the physical device features have been read, can be used to set features to enable on the device */
-	virtual void getEnabledFeatures();
-
 	// Connect and prepare the swap chain
 	void initSwapchain();
 

@@ -52,11 +52,10 @@ public:
 		CI.subresourceRange.layerCount = image->arrayLayers;
 		CI.image = image->handle;
 		VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &CI, nullptr, &handle));
-
 	}
 
 	~ImageView() {
-		// @todo
+		vkDestroyImageView(*device, handle, nullptr);
 	}
 
 	operator VkImageView() const {

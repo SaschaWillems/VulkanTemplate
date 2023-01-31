@@ -618,8 +618,7 @@ VulkanApplication::VulkanApplication(bool enableValidation)
 
 VulkanApplication::~VulkanApplication()
 {
-	// Clean up Vulkan resources
-	swapChain->cleanup();
+	delete swapChain;
 
 	vkDestroyImageView(*vulkanDevice, depthStencil.view, nullptr);
 	vkDestroyImage(*vulkanDevice, depthStencil.image, nullptr);
@@ -639,7 +638,6 @@ VulkanApplication::~VulkanApplication()
 	// @todo: deletion queue
 
 	delete overlay;
-
 	delete vulkanDevice;
 
 	if (settings.validation)
@@ -773,9 +771,6 @@ bool VulkanApplication::initVulkan()
 #endif
 
 	VkPhysicalDevice physicalDevice = physicalDevices[selectedDevice];
-
-	// Derived examples can override this to set actual features (based on above readings) to enable for logical device creation
-	getEnabledFeatures();
 
 	dynamicRenderingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
 	dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
@@ -1945,10 +1940,6 @@ void VulkanApplication::setupImages()
 		imageViewCI.subresourceRange.layerCount = 1;
 		VK_CHECK_RESULT(vkCreateImageView(*vulkanDevice, &imageViewCI, nullptr, &multisampleTarget.depth.view));
 	}
-}
-
-void VulkanApplication::getEnabledFeatures()
-{
 }
 
 void VulkanApplication::windowResize()

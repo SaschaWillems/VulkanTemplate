@@ -44,7 +44,7 @@ private:
 public:
 	VkFormat colorFormat;
 	VkColorSpaceKHR colorSpace;
-	VkSwapchainKHR swapChain = VK_NULL_HANDLE;// @todo: handle
+	VkSwapchainKHR handle{ VK_NULL_HANDLE };
 	uint32_t imageCount;
 	std::vector<VkImage> images; // why? see swapchainbuffer which has image
 	std::vector<SwapChainBuffer> buffers;
@@ -54,6 +54,18 @@ public:
 	SwapChain(SwapChainCreateInfo createInfo) : device(createInfo.device) {
 		instance = createInfo.instance;
 		device = device;
+	}
+
+	~SwapChain() {
+		if (handle != VK_NULL_HANDLE) {
+			for (uint32_t i = 0; i < imageCount; i++) {
+				vkDestroyImageView(device, buffers[i].view, nullptr);
+			}
+		}
+		if (surface != VK_NULL_HANDLE) {
+			vkDestroySwapchainKHR(device, handle, nullptr);
+			vkDestroySurfaceKHR(instance, surface, nullptr);
+		}
 	}
 
 	/** @brief Creates the platform specific surface abstraction of the native platform window used for presentation */	
@@ -266,7 +278,7 @@ public:
 	*/
 	void create(uint32_t *width, uint32_t *height, bool vsync = false)
 	{
-		VkSwapchainKHR oldSwapchain = swapChain;
+		VkSwapchainKHR oldSwapchain = handle;
 
 		// Get physical device surface properties and formats
 		VkSurfaceCapabilitiesKHR surfCaps;
@@ -387,23 +399,21 @@ public:
 			swapchainCI.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		}
 
-		VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &swapchainCI, nullptr, &swapChain));
+		VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &swapchainCI, nullptr, &handle));
 
 		// If an existing swap chain is re-created, destroy the old swap chain
 		// This also cleans up all the presentable images
-		if (oldSwapchain != VK_NULL_HANDLE) 
-		{ 
-			for (uint32_t i = 0; i < imageCount; i++)
-			{
+		if (oldSwapchain != VK_NULL_HANDLE)  { 
+			for (uint32_t i = 0; i < imageCount; i++) {
 				vkDestroyImageView(device, buffers[i].view, nullptr);
 			}
 			vkDestroySwapchainKHR(device, oldSwapchain, nullptr);
 		}
-		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(device, swapChain, &imageCount, NULL));
+		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(device, handle, &imageCount, NULL));
 
 		// Get the swap chain images
 		images.resize(imageCount);
-		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(device, swapChain, &imageCount, images.data()));
+		VK_CHECK_RESULT(vkGetSwapchainImagesKHR(device, handle, &imageCount, images.data()));
 
 		// Get the swap chain buffers containing the image and imageview
 		buffers.resize(imageCount);
@@ -449,7 +459,7 @@ public:
 	{
 		// By setting timeout to UINT64_MAX we will always wait until the next image has been acquired or an actual error is thrown
 		// With that we don't have to handle VK_NOT_READY
-		return vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, presentCompleteSemaphore, (VkFence)nullptr, imageIndex);
+		return vkAcquireNextImageKHR(device, handle, UINT64_MAX, presentCompleteSemaphore, (VkFence)nullptr, imageIndex);
 	}
 
 	/**
@@ -467,7 +477,7 @@ public:
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.pNext = NULL;
 		presentInfo.swapchainCount = 1;
-		presentInfo.pSwapchains = &swapChain;
+		presentInfo.pSwapchains = &handle;
 		presentInfo.pImageIndices = &imageIndex;
 		// Check if a wait semaphore has been specified to wait for before presenting the image
 		if (waitSemaphore != VK_NULL_HANDLE)
@@ -478,28 +488,6 @@ public:
 		return vkQueuePresentKHR(queue, &presentInfo);
 	}
 
-
-	/**
-	* Destroy and free Vulkan resources used for the swapchain
-	*/
-	// @todo: destructor
-	void cleanup()
-	{
-		if (swapChain != VK_NULL_HANDLE)
-		{
-			for (uint32_t i = 0; i < imageCount; i++)
-			{
-				vkDestroyImageView(device, buffers[i].view, nullptr);
-			}
-		}
-		if (surface != VK_NULL_HANDLE)
-		{
-			vkDestroySwapchainKHR(device, swapChain, nullptr);
-			vkDestroySurfaceKHR(instance, surface, nullptr);
-		}
-		surface = VK_NULL_HANDLE;
-		swapChain = VK_NULL_HANDLE;
-	}
 
 #if defined(_DIRECT2DISPLAY)
 	/**
