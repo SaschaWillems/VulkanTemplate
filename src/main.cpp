@@ -14,6 +14,8 @@ private:
 	Pipeline* testPipeline;
 	PipelineLayout* testPipelineLayout;
 public:	
+	bool test = false;
+
 	Application() : VulkanApplication(false) {
 		apiVersion = VK_API_VERSION_1_3;
 
@@ -73,7 +75,6 @@ public:
 			},
 			.cache = pipelineCache,
 			.layout = *testPipelineLayout,
-			.pNext = &pipelineRenderingCreateInfo,
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},
@@ -100,14 +101,15 @@ public:
 					.compareOp = VK_COMPARE_OP_ALWAYS,
 				}
 			},
-			.colorBlendState = {
-				.attachmentCount = 1,
-				.pAttachments = &blendAttachmentState
+			.blending = {
+				.attachments = { blendAttachmentState }
 			},
 			.dynamicState = {
 				DynamicState::Scissor,
 				DynamicState::Viewport
-			}
+			},
+			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
+			.enableHotReload = true
 		});
 
 		prepared = true;
@@ -215,6 +217,18 @@ public:
 		updateOverlay(getCurrentFrameIndex());
 		recordCommandBuffer(currentFrame.commandBuffer);
 		VulkanApplication::submitFrame(currentFrame);
+		if (test) {
+			vulkanDevice->waitIdle();
+			testPipeline->reload();
+			test = false;
+		}
+	}
+
+	void OnUpdateOverlay(vks::UIOverlay& overlay) {
+		if (overlay.button("Reload shader")) {
+			//testPipeline->reload();
+			test = true;
+		}
 	}
 
 };

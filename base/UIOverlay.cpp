@@ -205,22 +205,6 @@ namespace vks
 		pipelineRenderingCreateInfo.depthAttachmentFormat = depthFormat;
 		pipelineRenderingCreateInfo.stencilAttachmentFormat = depthFormat;
 
-		// Vertex bindings an attributes based on ImGui vertex definition
-		// @todo: designated initializers, move to pipeline creation struct
-		std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
-			vks::initializers::vertexInputBindingDescription(0, sizeof(ImDrawVert), VK_VERTEX_INPUT_RATE_VERTEX),
-		};
-		std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
-			vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, pos)),	// Location 0: Position
-			vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, uv)),	// Location 1: UV
-			vks::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R8G8B8A8_UNORM, offsetof(ImDrawVert, col)),	// Location 0: Color
-		};
-		VkPipelineVertexInputStateCreateInfo vertexInputState = vks::initializers::pipelineVertexInputStateCreateInfo();
-		vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
-		vertexInputState.pVertexBindingDescriptions = vertexInputBindings.data();
-		vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
-		vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
-
 		VkPipelineColorBlendAttachmentState blendAttachmentState{};
 		blendAttachmentState.blendEnable = VK_TRUE;
 		blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -251,8 +235,16 @@ namespace vks
 			},
 			.cache = pipelineCache,
 			.layout = *pipelineLayout,
-			.pNext = &pipelineRenderingCreateInfo,
-			.vertexInputState = vertexInputState,
+			.vertexInput = {
+				.bindings = {
+					{ 0, sizeof(ImDrawVert), VK_VERTEX_INPUT_RATE_VERTEX }
+				},
+				.attributes = {
+					{ 0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, pos) },
+					{ 1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(ImDrawVert, uv) },
+					{ 2, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(ImDrawVert, col) },
+				}
+			},
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},
@@ -279,14 +271,14 @@ namespace vks
 					.compareOp = VK_COMPARE_OP_ALWAYS,
 				}
 			},
-			.colorBlendState = {
-				.attachmentCount = 1,
-				.pAttachments = &blendAttachmentState
+			.blending = {
+				.attachments = { blendAttachmentState }
 			},
 			.dynamicState = { 
 				DynamicState::Scissor, 
 				DynamicState::Viewport 
-			}
+			},
+			.pipelineRenderingInfo = pipelineRenderingCreateInfo
 		});
 	}
 
