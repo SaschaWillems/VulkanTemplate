@@ -159,24 +159,6 @@ const std::string VulkanApplication::getAssetPath()
 }
 #endif
 
-void VulkanApplication::createCommandBuffers()
-{
-	commandBuffers.resize(swapChain->imageCount);
-	for (auto &commandBuffer : commandBuffers) {
-		commandBuffer = new CommandBuffer({
-			.device = *vulkanDevice,
-			.pool = commandPool
-		});
-	}
-}
-
-void VulkanApplication::destroyCommandBuffers()
-{
-	for (auto& commandBuffer : commandBuffers) {
-		delete(commandBuffer);
-	}
-}
-
 void VulkanApplication::createPipelineCache()
 {
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
@@ -205,7 +187,6 @@ void VulkanApplication::prepare()
 	initSwapchain();
 	createCommandPool();
 	setupSwapChain();
-	createCommandBuffers();
 	setupDepthStencil();
 	createPipelineCache();
 	setupImages();
@@ -574,11 +555,6 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 	// @todo: cap update rate
 	overlay->updateBuffers(frameIndex);
 
-	//if (overlay->update() || overlay->updated) {
-	//	buildCommandBuffers();
-	//	overlay->updated = false;
-	//}
-
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	if (mouseButtons.left) {
 		mouseButtons.left = false;
@@ -656,7 +632,6 @@ VulkanApplication::~VulkanApplication()
 {
 	// Clean up Vulkan resources
 	swapChain->cleanup();
-	destroyCommandBuffers();
 
 	vkDestroyImageView(*vulkanDevice, depthStencil.view, nullptr);
 	vkDestroyImage(*vulkanDevice, depthStencil.image, nullptr);
@@ -1855,8 +1830,6 @@ void VulkanApplication::keyPressed(uint32_t) {}
 
 void VulkanApplication::mouseMoved(double x, double y, bool & handled) {}
 
-void VulkanApplication::buildCommandBuffers() {}
-
 void VulkanApplication::createCommandPool()
 {
 	// @todo: rework
@@ -2028,13 +2001,7 @@ void VulkanApplication::windowResize()
 		overlay->resize(width, height);
 	}
 
-	// Command buffers need to be recreated as they may store
-	// references to the recreated frame buffer
-	destroyCommandBuffers();
-	createCommandBuffers();
-	buildCommandBuffers();
-
-	vkDeviceWaitIdle(*vulkanDevice);
+	vkDeviceWaitIdle(*vulkanDevice); // @todo: as device fn
 
 	if ((width > 0.0f) && (height > 0.0f)) {
 		camera.updateAspectRatio((float)width / (float)height);
@@ -2109,6 +2076,7 @@ void VulkanApplication::initSwapchain()
 
 void VulkanApplication::setupSwapChain()
 {
+	// @todo: (recreate?)
 	swapChain->create(&width, &height, settings.vsync);
 }
 
@@ -2116,7 +2084,6 @@ void VulkanApplication::OnUpdateOverlay(vks::UIOverlay &overlay) {}
 
 void VulkanApplication::prepareFrame(VulkanFrameObjects& frame)
 {
-
 	// Ensure command buffer execution has finished
 	VK_CHECK_RESULT(vkWaitForFences(*vulkanDevice, 1, &frame.renderCompleteFence, VK_TRUE, UINT64_MAX));
 	VK_CHECK_RESULT(vkResetFences(*vulkanDevice, 1, &frame.renderCompleteFence));

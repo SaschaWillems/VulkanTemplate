@@ -40,8 +40,6 @@ class SwapChain
 private: 
 	VkInstance instance;
 	vks::VulkanDevice& device;
-	//VkDevice device;
-	//VkPhysicalDevice physicalDevice;
 	VkSurfaceKHR surface;
 public:
 	VkFormat colorFormat;
@@ -50,7 +48,7 @@ public:
 	uint32_t imageCount;
 	std::vector<VkImage> images; // why? see swapchainbuffer which has image
 	std::vector<SwapChainBuffer> buffers;
-	uint32_t queueNodeIndex = UINT32_MAX;
+	uint32_t queueNodeIndex = UINT32_MAX; // @todo: rename to presentQueueFamilyIndex
 	uint32_t currentImageIndex = 0;
 
 	SwapChain(SwapChainCreateInfo createInfo) : device(createInfo.device) {
@@ -137,6 +135,8 @@ public:
 		{
 			vkGetPhysicalDeviceSurfaceSupportKHR(device.physicalDevice, i, surface, &supportsPresent[i]);
 		}
+
+		// @todo: get from device?
 
 		// Search for a graphics and a present queue in the array of queue
 		// families, try to find one that supports both
@@ -482,6 +482,7 @@ public:
 	/**
 	* Destroy and free Vulkan resources used for the swapchain
 	*/
+	// @todo: destructor
 	void cleanup()
 	{
 		if (swapChain != VK_NULL_HANDLE)

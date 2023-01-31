@@ -18,6 +18,8 @@
 #include "VulkanTools.h"
 #include "PipelineLayout.hpp"
 
+enum class DynamicState { Viewport, Scissor };
+
 struct PipelineCreateInfo {
 	vks::VulkanDevice& device;
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
@@ -36,7 +38,7 @@ struct PipelineCreateInfo {
 	VkPipelineMultisampleStateCreateInfo multisampleState{ };
 	VkPipelineDepthStencilStateCreateInfo depthStencilState{ };
 	VkPipelineColorBlendStateCreateInfo colorBlendState{ };
-	VkPipelineDynamicStateCreateInfo dynamicState{ };
+	std::vector<DynamicState> dynamicState{};
 	VkRenderPass renderPass;
 	uint32_t subpass;
 	VkPipeline basePipelineHandle;
@@ -117,7 +119,22 @@ public:
 		createInfo.multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 		createInfo.depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		createInfo.colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-		createInfo.dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		
+		std::vector<VkDynamicState> dstates{};
+		for (auto& s : createInfo.dynamicState) {
+			switch (s) {
+			case DynamicState::Scissor:
+				dstates.push_back(VK_DYNAMIC_STATE_SCISSOR);
+				break;
+			case DynamicState::Viewport:
+				dstates.push_back(VK_DYNAMIC_STATE_VIEWPORT);
+				break;
+			}
+		}
+		VkPipelineDynamicStateCreateInfo dynamicState{};
+		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		dynamicState.dynamicStateCount = (uint32_t)dstates.size();
+		dynamicState.pDynamicStates = dstates.data();
 
 		VkGraphicsPipelineCreateInfo pipelineCI{};
 		pipelineCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -132,7 +149,7 @@ public:
 		pipelineCI.pMultisampleState = &createInfo.multisampleState;
 		pipelineCI.pDepthStencilState = &createInfo.depthStencilState;
 		pipelineCI.pColorBlendState = &createInfo.colorBlendState;
-		pipelineCI.pDynamicState = &createInfo.dynamicState;
+		pipelineCI.pDynamicState = &dynamicState;
 		pipelineCI.pNext = createInfo.pNext;
 
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, createInfo.cache, 1, &pipelineCI, nullptr, &pso));

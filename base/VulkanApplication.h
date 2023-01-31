@@ -72,15 +72,11 @@ struct ImageAttachment {
 class VulkanApplication
 {
 private:	
-	// Get window title with example name, device, et.
 	std::string getWindowTitle();
-	/** brief Indicates that the view (position, rotation) has changed and buffers containing camera matrices need to be updated */
 	bool viewUpdated = false;
-	// Destination dimensions for resizing the window
 	uint32_t destWidth;
 	uint32_t destHeight;
 	bool resizing = false;
-	// Called if the window is resized and some resources have to be recreatesd
 	void windowResize();
 	void handleMouseMove(int32_t x, int32_t y);
 	VkDebugUtilsMessengerEXT debugUtilsMessenger;
@@ -94,14 +90,13 @@ protected:
 	uint32_t frameCounter = 0;
 	uint32_t lastFPS = 0;
 	std::chrono::time_point<std::chrono::high_resolution_clock> lastTimestamp;
-	VkInstance instance;
+	VkInstance instance; // @todo: abstract
 	std::vector<const char*> enabledDeviceExtensions;
 	std::vector<const char*> enabledInstanceExtensions;
 	void* deviceCreatepNextChain = nullptr;
 	VkQueue queue; // Use from device
 	VkFormat depthFormat;
 	CommandPool* commandPool;
-	std::vector<CommandBuffer*> commandBuffers;
 	uint32_t currentBuffer = 0;
 	VkPipelineCache pipelineCache;
 	SwapChain* swapChain;
@@ -292,10 +287,6 @@ public:
 	// Called when the window has been resized
 	// Can be overriden in derived class to recreate or rebuild resources attached to the frame buffer / swapchain
 	virtual void windowResized();
-	// Pure virtual function to be overriden by the dervice class
-	// Called in case of an event where e.g. the framebuffer has to be rebuild and thus
-	// all command buffers that may reference this
-	virtual void buildCommandBuffers();
 
 	// Creates a new (graphics) command pool object storing command buffers
 	void createCommandPool();
@@ -312,12 +303,6 @@ public:
 	void initSwapchain();
 	// Create swap chain images
 	void setupSwapChain();
-
-	// Create command buffers for drawing commands
-	void createCommandBuffers();
-	// Destroy all command buffers and set their handles to VK_NULL_HANDLE
-	// May be necessary during runtime if options are toggled 
-	void destroyCommandBuffers();
 
 	void createPipelineCache();
 	void createOverlay();
