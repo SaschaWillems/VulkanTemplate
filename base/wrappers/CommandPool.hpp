@@ -1,41 +1,37 @@
 /*
-* Command pool abstraction class
-*
-* Copyright (C) by Sascha Willems - www.saschawillems.de
-*
-* This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
-*/
+ * Command pool abstraction class
+ *
+ * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ *
+ * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
+ */
 
 #pragma once
 
 #include "volk.h"
 #include "Initializers.hpp"
 #include "VulkanTools.h"
+#include "Device.hpp"
+
+struct CommandPoolCreateInfo {
+	vks::VulkanDevice& device;
+	uint32_t queueFamilyIndex;
+	VkCommandPoolCreateFlags flags;
+};
 
 class CommandPool {
 private:
-	VkDevice device;
-	uint32_t queueFamilyIndex;
-	VkCommandPoolCreateFlags flags;
+	vks::VulkanDevice& device;
 public:
 	VkCommandPool handle;
-	CommandPool(VkDevice device) {
-		this->device = device;
-	}
-	~CommandPool() {
-		// @todo
-	}
-	void create() {
+	CommandPool(CommandPoolCreateInfo createInfo) : device(createInfo.device) {
 		VkCommandPoolCreateInfo CI{};
 		CI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		CI.queueFamilyIndex = queueFamilyIndex;
-		CI.flags = flags;
+		CI.queueFamilyIndex = createInfo.queueFamilyIndex;
+		CI.flags = createInfo.flags;
 		VK_CHECK_RESULT(vkCreateCommandPool(device, &CI, nullptr, &handle));
 	}
-	void setQueueFamilyIndex(uint32_t queueFamilyIndex) {
-		this->queueFamilyIndex = queueFamilyIndex;
-	}
-	void setFlags(VkCommandPoolCreateFlags flags) {
-		this->flags = flags;
+	~CommandPool() {
+		vkDestroyCommandPool(device, handle, nullptr);
 	}
 };

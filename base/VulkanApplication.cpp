@@ -137,14 +137,6 @@ VkResult VulkanApplication::createInstance(bool enableValidation)
 	return vkCreateInstance(&instanceCreateInfo, nullptr, &instance);
 }
 
-std::string VulkanApplication::getWindowTitle()
-{
-	std::string device(vulkanDevice->properties.deviceName);
-	std::string windowTitle;
-	windowTitle = title + " - " + device;
-	return windowTitle;
-}
-
 #if !(defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK))
 // iOS & macOS: VulkanApplication::getAssetPath() implemented externally to allow access to Objective-C components
 const std::string VulkanApplication::getAssetPath()
@@ -159,15 +151,23 @@ const std::string VulkanApplication::getAssetPath()
 }
 #endif
 
-void VulkanApplication::createPipelineCache()
+void VulkanApplication::prepare()
 {
-	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
+	initSwapchain();
+	// Default command Pool
+	commandPool = new CommandPool({
+		.device = *vulkanDevice,
+		.queueFamilyIndex = swapChain->queueNodeIndex, // @todo: from device
+		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+	});
+	swapChain->create(&width, &height, settings.vsync);
+	setupDepthStencil();
+	setupImages();
+	// Default pipeline cache
+	VkPipelineCacheCreateInfo pipelineCacheCreateInfo{};
 	pipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 	VK_CHECK_RESULT(vkCreatePipelineCache(*vulkanDevice, &pipelineCacheCreateInfo, nullptr, &pipelineCache));
-}
-
-void VulkanApplication::createOverlay()
-{
+	// ImGUI based overlay
 	overlay = new vks::UIOverlay({
 		.device = *vulkanDevice,
 		.queue = queue,
@@ -179,18 +179,7 @@ void VulkanApplication::createOverlay()
 		.assetPath = getAssetPath(),
 		.scale = 1.0f,
 		.frameCount = getFrameCount(),
-	});
-}
-
-void VulkanApplication::prepare()
-{
-	initSwapchain();
-	createCommandPool();
-	setupSwapChain();
-	setupDepthStencil();
-	createPipelineCache();
-	setupImages();
-	createOverlay();
+		});
 }
 
 void VulkanApplication::renderFrame()
@@ -349,10 +338,9 @@ void VulkanApplication::renderLoop()
 					camera.rotate(glm::vec3(gamePadState.axisLeft.y * 0.5f, 0.0f, 0.0f));
 					updateView = true;
 				}
-				// Zoom
 				if (std::abs(gamePadState.axisRight.y) > deadZone)
 				{
-					zoom -= gamePadState.axisRight.y * 0.01f * zoomSpeed;
+					camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f * zoomSpeed));
 					updateView = true;
 				}
 				if (updateView)
@@ -500,7 +488,7 @@ void VulkanApplication::renderLoop()
 #endif
 	// Flush device to make sure all resources can be freed
 	if (*vulkanDevice != VK_NULL_HANDLE) {
-		vkDeviceWaitIdle(*vulkanDevice);
+		vulkanDevice->waitIdle();
 	}
 }
 
@@ -943,7 +931,7 @@ HWND VulkanApplication::setupWindow(HINSTANCE hinstance, WNDPROC wndproc)
 
 	AdjustWindowRectEx(&windowRect, dwStyle, FALSE, dwExStyle);
 
-	std::string windowTitle = getWindowTitle();
+	std::string windowTitle = windowTitle;
 	window = CreateWindowEx(0,
 		name.c_str(),
 		windowTitle.c_str(),
@@ -1071,7 +1059,6 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	case WM_MOUSEWHEEL:
 	{
 		short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-		zoom += (float)wheelDelta * 0.005f * zoomSpeed;
 		camera.translate(glm::vec3(0.0f, 0.0f, (float)wheelDelta * 0.005f * zoomSpeed));
 		viewUpdated = true;
 		break;
@@ -1377,7 +1364,6 @@ void VulkanApplication::pointerAxis(wl_pointer *pointer, uint32_t time,
 	switch (axis)
 	{
 	case REL_X:
-		zoom += d * 0.005f * zoomSpeed;
 		camera.translate(glm::vec3(0.0f, 0.0f, d * 0.005f * zoomSpeed));
 		viewUpdated = true;
 		break;
@@ -1612,7 +1598,7 @@ struct xdg_surface *VulkanApplication::setupWindow()
 	xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
 	xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, this);
 
-	std::string windowTitle = getWindowTitle();
+	std::string windowTitle = windowTitle;
 	xdg_toplevel_set_title(xdg_toplevel, windowTitle.c_str());
 	wl_surface_commit(surface);
 	return xdg_surface;
@@ -1666,7 +1652,7 @@ xcb_window_t VulkanApplication::setupWindow()
 		window, (*reply).atom, 4, 32, 1,
 		&(*atom_wm_delete_window).atom);
 
-	std::string windowTitle = getWindowTitle();
+	std::string windowTitle = windowTitle;
 	xcb_change_property(connection, XCB_PROP_MODE_REPLACE,
 		window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
 		title.size(), windowTitle.c_str());
@@ -1830,15 +1816,6 @@ void VulkanApplication::keyPressed(uint32_t) {}
 
 void VulkanApplication::mouseMoved(double x, double y, bool & handled) {}
 
-void VulkanApplication::createCommandPool()
-{
-	// @todo: rework
-	commandPool = new CommandPool(*vulkanDevice);
-	commandPool->setFlags(VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-	commandPool->setQueueFamilyIndex(swapChain->queueNodeIndex);
-	commandPool->create();
-}
-
 void VulkanApplication::setupDepthStencil()
 {
 	VkImageCreateInfo imageCI{};
@@ -1983,12 +1960,12 @@ void VulkanApplication::windowResize()
 	prepared = false;
 
 	// Ensure all operations on the device have been finished before destroying resources
-	vkDeviceWaitIdle(*vulkanDevice);
+	vulkanDevice->waitIdle();
 
 	// Recreate swap chain
 	width = destWidth;
 	height = destHeight;
-	setupSwapChain();
+	swapChain->create(&width, &height, settings.vsync);
 
 	// Recreate the frame buffers
 	vkDestroyImageView(*vulkanDevice, depthStencil.view, nullptr);
@@ -2001,7 +1978,7 @@ void VulkanApplication::windowResize()
 		overlay->resize(width, height);
 	}
 
-	vkDeviceWaitIdle(*vulkanDevice); // @todo: as device fn
+	vulkanDevice->waitIdle();
 
 	if ((width > 0.0f) && (height > 0.0f)) {
 		camera.updateAspectRatio((float)width / (float)height);
@@ -2039,7 +2016,6 @@ void VulkanApplication::handleMouseMove(int32_t x, int32_t y)
 		viewUpdated = true;
 	}
 	if (mouseButtons.right) {
-		zoom += dy * .005f * zoomSpeed;
 		camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f * zoomSpeed));
 		viewUpdated = true;
 	}
@@ -2072,12 +2048,6 @@ void VulkanApplication::initSwapchain()
 #elif defined(VK_USE_PLATFORM_XCB_KHR)
 	swapChain->initSurface(connection, window);
 #endif
-}
-
-void VulkanApplication::setupSwapChain()
-{
-	// @todo: (recreate?)
-	swapChain->create(&width, &height, settings.vsync);
 }
 
 void VulkanApplication::OnUpdateOverlay(vks::UIOverlay &overlay) {}

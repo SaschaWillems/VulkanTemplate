@@ -632,5 +632,9 @@ namespace vks
 			return VK_FORMAT_UNDEFINED;
 		}
 
+		void waitIdle() {
+			vkDeviceWaitIdle(logicalDevice);
+		}
+
 	};
 }

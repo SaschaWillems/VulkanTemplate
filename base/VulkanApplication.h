@@ -72,7 +72,6 @@ struct ImageAttachment {
 class VulkanApplication
 {
 private:	
-	std::string getWindowTitle();
 	bool viewUpdated = false;
 	uint32_t destWidth;
 	uint32_t destHeight;
@@ -121,10 +120,6 @@ public:
 		VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
 	} settings;
 
-	VkClearColorValue defaultClearColor = { { 0.025f, 0.025f, 0.025f, 1.0f } };
-
-	float zoom = 0;
-
 	static std::vector<const char*> args;
 
 	float timer = 0.0f;
@@ -143,6 +138,7 @@ public:
 
 	std::string title = "Vulkan Template";
 	std::string name = "VulkanTemplate";
+	std::string windowTitle = "Vulkan Template";
 	uint32_t apiVersion = VK_API_VERSION_1_0;
 
 	struct {
@@ -288,8 +284,6 @@ public:
 	// Can be overriden in derived class to recreate or rebuild resources attached to the frame buffer / swapchain
 	virtual void windowResized();
 
-	// Creates a new (graphics) command pool object storing command buffers
-	void createCommandPool();
 	// Setup default depth and stencil views
 	virtual void setupDepthStencil();
 	// Create framebuffers for all requested swap chain images
@@ -301,11 +295,6 @@ public:
 
 	// Connect and prepare the swap chain
 	void initSwapchain();
-	// Create swap chain images
-	void setupSwapChain();
-
-	void createPipelineCache();
-	void createOverlay();
 
 	// Prepare commonly used Vulkan functions
 	virtual void prepare();
