@@ -70,8 +70,8 @@ public:
 		testPipeline = new Pipeline({
 			.device = *vulkanDevice,
 			.shaders = {
-				getAssetPath() + "shaders/fullscreen.vert.spv",
-				getAssetPath() + "shaders/fullscreen.frag.spv"
+				getAssetPath() + "shaders/fullscreen.vert",
+				getAssetPath() + "shaders/fullscreen.frag"
 			},
 			.cache = pipelineCache,
 			.layout = *testPipelineLayout,

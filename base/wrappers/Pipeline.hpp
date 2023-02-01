@@ -17,6 +17,7 @@
 #include "Initializers.hpp"
 #include "VulkanTools.h"
 #include "PipelineLayout.hpp"
+#include "dxc.hpp"
 
 enum class DynamicState { Viewport, Scissor };
 
@@ -55,63 +56,28 @@ private:
 
 	// Copy of the createInfo for hot reload
 	PipelineCreateInfo* initialCreateInfo{ nullptr };
+
+	void addShader(const std::string filename) {
+
+		// @todo: also support GLSL? Or jut drop it? And what about Android?
+		Dxc* compiler = new Dxc();
+		VkShaderModule shaderModule = compiler->compileShader(filename, device);
+		VkShaderStageFlagBits shaderStage = compiler->getShaderStage(filename);
+		shaderModules.push_back(shaderModule);
+
+		VkPipelineShaderStageCreateInfo shaderStageCI{};
+		shaderStageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		shaderStageCI.stage = shaderStage;
+		shaderStageCI.module = shaderModule;
+		shaderStageCI.pName = "main";
+		shaderStages.push_back(shaderStageCI);
+	}
 	
 	void createPipelineObject(PipelineCreateInfo createInfo) {
-		std::vector<VkShaderModule> shaderModules{};
-		std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
-
+		shaderStages.clear();
+		shaderModules.clear();
 		for (auto& filename : createInfo.shaders) {
-			// Get shader stage from file extension (.spv is omitted)
-			size_t extpos = filename.find('.');
-			size_t extend = filename.find('.', extpos + 1);
-			assert(extpos != std::string::npos);
-			std::string ext = filename.substr(extpos + 1, extend - extpos - 1);
-			VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
-			if (ext == "vert") { shaderStage = VK_SHADER_STAGE_VERTEX_BIT; }
-			if (ext == "frag") { shaderStage = VK_SHADER_STAGE_FRAGMENT_BIT; }
-			assert(shaderStage != VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM);
-			// Load from file
-			size_t shaderSize{ 0 };
-			char* shaderCode = nullptr;
-#if defined(__ANDROID__)
-			// Load shader from compressed asset
-			AAsset* asset = AAssetManager_open(androidApp->activity->assetManager, filename.c_str(), AASSET_MODE_STREAMING);
-			assert(asset);
-			shaderSize = AAsset_getLength(asset);
-			shaderCode = new char[shaderSize];
-			AAsset_read(asset, shaderCode, shaderSize);
-			AAsset_close(asset);
-#else
-			std::ifstream is(filename, std::ios::binary | std::ios::in | std::ios::ate);
-			if (is.is_open()) {
-				shaderSize = is.tellg();
-				is.seekg(0, std::ios::beg);
-				shaderCode = new char[shaderSize];
-				is.read(shaderCode, shaderSize);
-				is.close();
-			}
-			else {
-				std::cerr << "Error: Could not open shader file \"" << filename << "\"" << std::endl;
-			}
-#endif
-			assert(shaderSize > 0);
-
-			VkShaderModuleCreateInfo moduleCreateInfo{};
-			moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-			moduleCreateInfo.codeSize = shaderSize;
-			moduleCreateInfo.pCode = (uint32_t*)shaderCode;
-			VkShaderModule shaderModule;
-			VK_CHECK_RESULT(vkCreateShaderModule(device, &moduleCreateInfo, nullptr, &shaderModule));
-			delete[] shaderCode;
-			shaderModules.push_back(shaderModule);
-
-			VkPipelineShaderStageCreateInfo shaderStageCI{};
-			shaderStageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			shaderStageCI.stage = shaderStage;
-			shaderStageCI.module = shaderModule;
-			shaderStageCI.pName = "main";
-			shaderStages.push_back(shaderStageCI);
-
+			addShader(filename);
 		}
 
 		createInfo.inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

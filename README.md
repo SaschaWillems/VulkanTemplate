@@ -12,6 +12,7 @@ Includes
 - imgui
 - tinygltf
 - volk
+- dxc
 
 Uses
 - dynamic rendering

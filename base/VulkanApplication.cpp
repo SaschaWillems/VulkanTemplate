@@ -926,7 +926,6 @@ HWND VulkanApplication::setupWindow(HINSTANCE hinstance, WNDPROC wndproc)
 
 	AdjustWindowRectEx(&windowRect, dwStyle, FALSE, dwExStyle);
 
-	std::string windowTitle = windowTitle;
 	window = CreateWindowEx(0,
 		name.c_str(),
 		windowTitle.c_str(),
@@ -1593,7 +1592,6 @@ struct xdg_surface *VulkanApplication::setupWindow()
 	xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
 	xdg_toplevel_add_listener(xdg_toplevel, &xdg_toplevel_listener, this);
 
-	std::string windowTitle = windowTitle;
 	xdg_toplevel_set_title(xdg_toplevel, windowTitle.c_str());
 	wl_surface_commit(surface);
 	return xdg_surface;
@@ -1647,7 +1645,6 @@ xcb_window_t VulkanApplication::setupWindow()
 		window, (*reply).atom, 4, 32, 1,
 		&(*atom_wm_delete_window).atom);
 
-	std::string windowTitle = windowTitle;
 	xcb_change_property(connection, XCB_PROP_MODE_REPLACE,
 		window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
 		title.size(), windowTitle.c_str());
