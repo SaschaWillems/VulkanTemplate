@@ -5,6 +5,7 @@
  */
 
 #include "VulkanContext.h"
+#include "FileWatcher.hpp"
 #include <VulkanApplication.h>
 
 class Application : public VulkanApplication {
@@ -13,9 +14,8 @@ private:
 	std::vector<FrameObjects> frameObjects;
 	Pipeline* testPipeline;
 	PipelineLayout* testPipelineLayout;
+	FileWatcher* fileWatcher{ nullptr };
 public:	
-	bool test = false;
-
 	Application() : VulkanApplication(false) {
 		apiVersion = VK_API_VERSION_1_3;
 
@@ -33,6 +33,10 @@ public:
 	~Application() {
 		for (FrameObjects& frame : frameObjects) {
 			destroyBaseFrameObjects(frame);
+		}
+		if (fileWatcher) {
+			fileWatcher->stop();
+			delete fileWatcher;
 		}
 	}
 
@@ -111,6 +115,13 @@ public:
 			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
 			.enableHotReload = true
 		});
+
+		fileWatcher = new FileWatcher();
+		fileWatcher->addFile(getAssetPath() + "shaders/fullscreen.frag");
+		fileWatcher->onFileChanged = [=](const std::string f) {
+			this->onFileChanged(f);
+		};		
+		fileWatcher->start();
 
 		prepared = true;
 	}
@@ -217,18 +228,19 @@ public:
 		updateOverlay(getCurrentFrameIndex());
 		recordCommandBuffer(currentFrame.commandBuffer);
 		VulkanApplication::submitFrame(currentFrame);
-		if (test) {
-			vulkanDevice->waitIdle();
+
+		if (testPipeline->wantsReload) {
 			testPipeline->reload();
-			test = false;
 		}
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		if (overlay.button("Reload shader")) {
-			//testPipeline->reload();
-			test = true;
-		}
+	}
+
+	void onFileChanged(const std::string filename) {
+		// @todo
+		std::cout << filename << " was modified\n";
+		testPipeline->wantsReload = true;
 	}
 
 };

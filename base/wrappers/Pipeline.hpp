@@ -143,6 +143,7 @@ private:
 
 public:
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
+	bool wantsReload = false;
 
 	Pipeline(PipelineCreateInfo createInfo) : device(createInfo.device) {
 		createPipelineObject(createInfo);
@@ -158,6 +159,7 @@ public:
 	}
 
 	void reload() {
+		wantsReload = false;
 		assert(initialCreateInfo);
 		device.waitIdle();
 		vkDestroyPipeline(device, handle, nullptr);
