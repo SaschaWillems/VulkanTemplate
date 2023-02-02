@@ -118,7 +118,7 @@ public:
 			hres = result->GetErrorBuffer(&errorBlob);
 			if (SUCCEEDED(hres) && errorBlob) {
 				std::cerr << "Shader compilation failed :\n\n" << (const char*)errorBlob->GetBufferPointer();
-				throw std::runtime_error("Compilation failed");
+				throw "Compilation failed";
 			}
 		}
 

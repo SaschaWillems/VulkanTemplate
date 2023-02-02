@@ -10,6 +10,7 @@
 
 #include <vector>
 #include "volk.h"
+#include <stdexcept>
 #if defined(__ANDROID__)
 #include "Android.h"
 #endif
@@ -61,23 +62,31 @@ private:
 
 		// @todo: also support GLSL? Or jut drop it? And what about Android?
 		Dxc* compiler = new Dxc();
-		VkShaderModule shaderModule = compiler->compileShader(filename, device);
-		VkShaderStageFlagBits shaderStage = compiler->getShaderStage(filename);
-		shaderModules.push_back(shaderModule);
-
-		VkPipelineShaderStageCreateInfo shaderStageCI{};
-		shaderStageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		shaderStageCI.stage = shaderStage;
-		shaderStageCI.module = shaderModule;
-		shaderStageCI.pName = "main";
-		shaderStages.push_back(shaderStageCI);
+		try {
+			VkShaderModule shaderModule = compiler->compileShader(filename, device);
+			VkShaderStageFlagBits shaderStage = compiler->getShaderStage(filename);
+			shaderModules.push_back(shaderModule);
+			VkPipelineShaderStageCreateInfo shaderStageCI{};
+			shaderStageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			shaderStageCI.stage = shaderStage;
+			shaderStageCI.module = shaderModule;
+			shaderStageCI.pName = "main";
+			shaderStages.push_back(shaderStageCI);
+		} catch (...) {
+			throw;
+		}
 	}
 	
 	void createPipelineObject(PipelineCreateInfo createInfo) {
 		shaderStages.clear();
 		shaderModules.clear();
-		for (auto& filename : createInfo.shaders) {
-			addShader(filename);
+		try {
+			for (auto& filename : createInfo.shaders) {
+				addShader(filename);
+			}
+		}
+		catch (...) {
+			throw;
 		}
 
 		createInfo.inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -132,7 +141,7 @@ private:
 		pipelineCI.pNext = &createInfo.pipelineRenderingInfo; // createInfo.pNext;
 
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, createInfo.cache, 1, &pipelineCI, nullptr, &handle));
-
+	
 		// Shader modules can be safely destroyed after pipeline creation
 		for (auto& shaderModule : shaderModules) {
 			vkDestroyShaderModule(device, shaderModule, nullptr);
@@ -162,9 +171,15 @@ public:
 		wantsReload = false;
 		assert(initialCreateInfo);
 		device.waitIdle();
-		vkDestroyPipeline(device, handle, nullptr);
-		createPipelineObject(*initialCreateInfo);
-		std::cout << "Pipeline recreated\n";
+		// For hot reloads create a temp handle, so if pipeline creation fails the application will continue with the old pipeline
+		VkPipeline oldHandle = handle;
+		try {
+			createPipelineObject(*initialCreateInfo);
+			vkDestroyPipeline(device, oldHandle, nullptr);
+			std::cout << "Pipeline recreated\n";
+		} catch (...) {
+			std::cerr << "Could not recreate pipeline, using last version\n";
+		}
 	}
 
 	operator VkPipeline() { return handle; };
