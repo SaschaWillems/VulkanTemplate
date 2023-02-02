@@ -8,13 +8,26 @@
 #include "FileWatcher.hpp"
 #include <VulkanApplication.h>
 
+struct ShaderData {
+	float time{ 0.0f };
+	glm::vec2 resolution{ 0.0f, 0.0f };
+} shaderData;
+
 class Application : public VulkanApplication {
 private:
-	struct FrameObjects : public VulkanFrameObjects {};
+	struct FrameObjects : public VulkanFrameObjects {
+		vks::Buffer uniformBuffer; // @todo: pointer type with initializer?
+		DescriptorSet* descriptorSet;
+	};
 	std::vector<FrameObjects> frameObjects;
 	Pipeline* testPipeline;
 	PipelineLayout* testPipelineLayout;
 	FileWatcher* fileWatcher{ nullptr };
+	vks::Buffer* uniformBuffer{ nullptr };
+	DescriptorPool* descriptorPool;
+	DescriptorSetLayout* descriptorSetLayout;
+	PipelineLayout* pipelineLayout{ nullptr };
+	float time{ 0.0f };
 public:	
 	Application() : VulkanApplication(false) {
 		apiVersion = VK_API_VERSION_1_3;
@@ -48,13 +61,43 @@ public:
 		// We try to get a transfer queue for background uploads
 		if (vulkanDevice->hasDedicatedTransferQueue) {
 			VulkanContext::copyQueue = vulkanDevice->getQueue(QueueType::Transfer);
-		} else {
+		}
+		else {
 			VulkanContext::copyQueue = queue;
 		}
 
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
 			createBaseFrameObjects(frame);
+			frameObjects.resize(getFrameCount());
+			VK_CHECK_RESULT(vulkanDevice->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame.uniformBuffer, sizeof(ShaderData)));
+			frame.uniformBuffer.map();
+		}
+
+		descriptorPool = new DescriptorPool({
+			.device = *vulkanDevice,
+			.maxSets = getFrameCount(),
+			.poolSizes = {
+				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = getFrameCount() },
+			}
+		});
+
+		descriptorSetLayout = new DescriptorSetLayout({
+			.device = *vulkanDevice,
+			.bindings = {
+				{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
+			}
+		});
+
+		for (FrameObjects& frame : frameObjects) {
+			frame.descriptorSet  = new DescriptorSet({
+				.device = *vulkanDevice,
+				.pool = descriptorPool,
+				.layouts = { descriptorSetLayout->handle },
+				.descriptors = {
+					{.dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &frame.uniformBuffer.descriptor }
+				}
+			});
 		}
 
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
@@ -69,8 +112,9 @@ public:
 
 		testPipelineLayout = new PipelineLayout({
 			.device = *vulkanDevice,
+			.layouts = { descriptorSetLayout->handle },
 		});
-
+		
 		testPipeline = new Pipeline({
 			.device = *vulkanDevice,
 			.shaders = {
@@ -118,6 +162,7 @@ public:
 
 		fileWatcher = new FileWatcher();
 		fileWatcher->addFile(getAssetPath() + "shaders/fullscreen.frag");
+		fileWatcher->addFile(getAssetPath() + "shaders/fullscreen.vert");
 		fileWatcher->onFileChanged = [=](const std::string f) {
 			this->onFileChanged(f);
 		};		
@@ -126,8 +171,10 @@ public:
 		prepared = true;
 	}
 
-	void recordCommandBuffer(CommandBuffer* commandBuffer)
+	void recordCommandBuffer(FrameObjects& frame)
 	{
+		CommandBuffer* commandBuffer = frame.commandBuffer;
+
 		const bool multiSampling = (settings.sampleCount > VK_SAMPLE_COUNT_1_BIT);
 
 		CommandBuffer* cb = commandBuffer;
@@ -201,6 +248,7 @@ public:
 		cb->setScissor(0, 0, width, height);
 
 		cb->bindPipeline(testPipeline);
+		cb->bindDescriptorSets(testPipelineLayout, { frame.descriptorSet });
 		cb->draw(3, 1, 0, 0);
 
 		if (overlay->visible) {
@@ -226,15 +274,21 @@ public:
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
-		recordCommandBuffer(currentFrame.commandBuffer);
+		shaderData.time = time;
+		shaderData.resolution = glm::vec2(width, height);
+		memcpy(currentFrame.uniformBuffer.mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
+		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
 
 		if (testPipeline->wantsReload) {
 			testPipeline->reload();
 		}
+
+		time += frameTimer;
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
+		overlay.text("Timer: %f", timer);
 	}
 
 	void onFileChanged(const std::string filename) {
