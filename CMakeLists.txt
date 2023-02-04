@@ -18,6 +18,7 @@ include_directories(base/wrappers)
 include_directories(base/compilers)
 include_directories(base/platforms)
 include_directories(base/interfaces)
+include_directories(base/loaders)
 
 OPTION(USE_D2D_WSI "Build the project using Direct to Display swapchain" OFF)
 OPTION(USE_WAYLAND_WSI "Build the project using Wayland swapchain" OFF)
@@ -81,3 +82,5 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 add_subdirectory(base)
 add_subdirectory(src)
 add_subdirectory(external)
+
+target_link_libraries(VulkanTemplate ${CMAKE_CURRENT_SOURCE_DIR}/libs/dxcompiler.lib)

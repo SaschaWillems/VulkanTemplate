@@ -57,15 +57,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSe
 	return VK_FALSE;
 }
 
-VkResult VulkanApplication::createInstance(bool enableValidation)
+VkResult VulkanApplication::createInstance()
 {
-	this->settings.validation = enableValidation;
-
-	// Validation can also be forced via a define
-#if defined(_VALIDATION)
-	this->settings.validation = true;
-#endif	
-
 	VkApplicationInfo appInfo = {};
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pApplicationName = name.c_str();
@@ -550,7 +543,7 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 #endif
 }
 
-VulkanApplication::VulkanApplication(bool enableValidation)
+VulkanApplication::VulkanApplication()
 {
 #if !defined(VK_USE_PLATFORM_ANDROID_KHR)
 	// Check for a valid asset path
@@ -567,30 +560,39 @@ VulkanApplication::VulkanApplication(bool enableValidation)
 	}
 #endif
 
-	settings.validation = enableValidation;
+	// Command line arguments
+	commandLineParser.add("help", { "--help" }, 0, "Show help");
+	commandLineParser.add("validation", { "-v", "--validation" }, 0, "Enable validation layers");
+	commandLineParser.add("vsync", { "-vs", "--vsync" }, 0, "Enable V-Sync");
+	commandLineParser.add("fullscreen", { "-f", "--fullscreen" }, 0, "Start in fullscreen mode");
+	commandLineParser.add("width", { "-w", "--width" }, 1, "Set window width");
+	commandLineParser.add("height", { "-h", "--height" }, 1, "Set window height");
+	commandLineParser.add("gpuselection", { "-g", "--gpu" }, 1, "Select GPU to run on");
+	commandLineParser.add("gpulist", { "-gl", "--listgpus" }, 0, "Display a list of available Vulkan devices");
 
-	char* numConvPtr;
-
-	// Parse command line arguments
-	for (size_t i = 0; i < args.size(); i++)
-	{
-		if (args[i] == std::string("-validation")) {
-			settings.validation = true;
-		}
-		if (args[i] == std::string("-vsync")) {
-			settings.vsync = true;
-		}
-		if ((args[i] == std::string("-f")) || (args[i] == std::string("--fullscreen"))) {
-			settings.fullscreen = true;
-		}
-		if ((args[i] == std::string("-w")) || (args[i] == std::string("-width"))) {
-			uint32_t w = strtol(args[i + 1], &numConvPtr, 10);
-			if (numConvPtr != args[i + 1]) { width = w; };
-		}
-		if ((args[i] == std::string("-h")) || (args[i] == std::string("-height"))) {
-			uint32_t h = strtol(args[i + 1], &numConvPtr, 10);
-			if (numConvPtr != args[i + 1]) { height = h; };
-		}
+	commandLineParser.parse(args);
+	if (commandLineParser.isSet("help")) {
+#if defined(_WIN32)
+		setupConsole("Vulkan Template");
+#endif
+		commandLineParser.printHelp();
+		std::cin.get();
+		exit(0);
+	}
+	if (commandLineParser.isSet("validation")) {
+		settings.validation = true;
+	}
+	if (commandLineParser.isSet("vsync")) {
+		settings.vsync = true;
+	}
+	if (commandLineParser.isSet("height")) {
+		height = commandLineParser.getValueAsInt("height", width);
+	}
+	if (commandLineParser.isSet("width")) {
+		width = commandLineParser.getValueAsInt("width", width);
+	}
+	if (commandLineParser.isSet("fullscreen")) {
+		settings.fullscreen = true;
 	}
 	
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
@@ -606,9 +608,8 @@ VulkanApplication::VulkanApplication(bool enableValidation)
 #endif
 
 #if defined(_WIN32)
-	// Enable console if validation is active
-	// Debug message callback will output to it
-	//if (this->settings.validation)
+	// Enable console if validation is active, the debug message callback will output to it
+	if (this->settings.validation)
 	{
 		setupConsole("Vulkan validation output");
 	}
@@ -681,7 +682,7 @@ bool VulkanApplication::initVulkan()
 	assert(err == VK_SUCCESS);
 
 	// Vulkan instance
-	err = createInstance(settings.validation);
+	err = createInstance();
 	if (err) {
 		vks::tools::exitFatal("Could not create Vulkan instance : \n" + vks::tools::errorString(err), err);
 		return false;
@@ -689,24 +690,23 @@ bool VulkanApplication::initVulkan()
 
 	volkLoadInstance(instance);
 
-	// If requested, we enable the default validation layers for debugging
+	// Create a debug callback to output validation messages to the console if validation is enabled
 	if (settings.validation)
 	{
-		VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
-		debugUtilsMessengerCI.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-		debugUtilsMessengerCI.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-		debugUtilsMessengerCI.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
-		debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessengerCallback;
+		VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{
+			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+			.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+			.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+			.pfnUserCallback = debugUtilsMessengerCallback,
+		};
 		VkResult result = vkCreateDebugUtilsMessengerEXT(instance, &debugUtilsMessengerCI, nullptr, &debugUtilsMessenger);
 		assert(result == VK_SUCCESS);
 	}
 
 	// Physical device
 	uint32_t gpuCount = 0;
-	// Get number of available physical devices
 	VK_CHECK_RESULT(vkEnumeratePhysicalDevices(instance, &gpuCount, nullptr));
 	assert(gpuCount > 0);
-	// Enumerate devices
 	std::vector<VkPhysicalDevice> physicalDevices(gpuCount);
 	err = vkEnumeratePhysicalDevices(instance, &gpuCount, physicalDevices.data());
 	if (err) {
@@ -769,28 +769,24 @@ bool VulkanApplication::initVulkan()
 		}
 	}
 #endif
-
-	VkPhysicalDevice physicalDevice = physicalDevices[selectedDevice];
-
+	
+	// Find a better way to pass this
 	dynamicRenderingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
 	dynamicRenderingFeatures.dynamicRendering = VK_TRUE;
 	deviceCreatepNextChain = &dynamicRenderingFeatures;
 
 	// Vulkan device creation
-	// This is handled by a separate class that gets a logical device representation
-	// and encapsulates functions related to a device
-	// @todo: make both functions into a single ctor with designated initializers
-	vulkanDevice = new vks::VulkanDevice(physicalDevice);
-	VkResult res = vulkanDevice->createLogicalDevice(enabledDeviceExtensions, deviceCreatepNextChain);
-	if (res != VK_SUCCESS) {
-		vks::tools::exitFatal("Could not create Vulkan device: \n" + vks::tools::errorString(res), res);
-		return false;
-	}
+	vulkanDevice = new vks::VulkanDevice({
+		.physicalDevice = physicalDevices[selectedDevice],
+		.enabledExtensions = enabledDeviceExtensions,
+		.requestedQueueTypes = { VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT },
+		.pNextChain = deviceCreatepNextChain,
+		.useSwapChain = true
+	});
 	
 	queue = vulkanDevice->getQueue(QueueType::Graphics);
 
 	// Find a suitable depth format
-	// @todo: move to device
 	depthFormat = vulkanDevice->getSupportedDepthFormat();
 	assert(depthFormat != VK_FORMAT_UNDEFINED);
 
@@ -1854,6 +1850,15 @@ void VulkanApplication::setupImages()
 	if (settings.sampleCount > VK_SAMPLE_COUNT_1_BIT) {
 		// Check if device supports requested sample count for color and depth frame buffer
 		//assert((deviceProperties.limits.framebufferColorSampleCounts >= sampleCount) && (deviceProperties.limits.framebufferDepthSampleCounts >= sampleCount));
+
+		if (multisampleTarget.color.image != VK_NULL_HANDLE) {
+			vkDestroyImage(*vulkanDevice, multisampleTarget.color.image, nullptr);
+			vkDestroyImageView(*vulkanDevice, multisampleTarget.color.view, nullptr);
+			vkFreeMemory(*vulkanDevice, multisampleTarget.color.memory, nullptr);
+			vkDestroyImage(*vulkanDevice, multisampleTarget.depth.image, nullptr);
+			vkDestroyImageView(*vulkanDevice, multisampleTarget.depth.view, nullptr);
+			vkFreeMemory(*vulkanDevice, multisampleTarget.depth.memory, nullptr);
+		}
 
 		VkImageCreateInfo imageCI{};
 		imageCI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;

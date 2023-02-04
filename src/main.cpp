@@ -29,7 +29,7 @@ private:
 	PipelineLayout* pipelineLayout{ nullptr };
 	float time{ 0.0f };
 public:	
-	Application() : VulkanApplication(false) {
+	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
 
 		vks::VulkanDevice::enabledFeatures.shaderClipDistance = VK_TRUE;

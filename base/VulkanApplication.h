@@ -55,6 +55,8 @@
 #include "CommandBuffer.hpp"
 #include "CommandPool.hpp"
 
+#include "CommandLineParser.hpp"
+
 struct VulkanFrameObjects
 {
 	CommandBuffer* commandBuffer;
@@ -64,7 +66,7 @@ struct VulkanFrameObjects
 };
 
 struct ImageAttachment {
-	VkImage image;
+	VkImage image = VK_NULL_HANDLE;
 	VkImageView view;
 	VkDeviceMemory memory;
 };
@@ -80,6 +82,7 @@ private:
 	void handleMouseMove(int32_t x, int32_t y);
 	VkDebugUtilsMessengerEXT debugUtilsMessenger;
 	VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures{};
+	CommandLineParser commandLineParser;
 protected:
 	struct MultisampleTarget {
 		ImageAttachment color;
@@ -194,10 +197,7 @@ public:
 	xcb_intern_atom_reply_t *atom_wm_delete_window;
 #endif
 
-	// Default ctor
-	VulkanApplication(bool enableValidation = false);
-
-	// dtor
+	VulkanApplication();
 	virtual ~VulkanApplication();
 
 	// Setup the vulkan instance, enable required extensions and connect to the physical device (GPU)
@@ -263,12 +263,7 @@ public:
 	void initxcbConnection();
 	void handleEvent(const xcb_generic_event_t *event);
 #endif
-	/**
-	* Create the application wide Vulkan instance
-	*
-	* @note Virtual, can be overriden by derived example class for custom instance creation
-	*/
-	virtual VkResult createInstance(bool enableValidation);
+	virtual VkResult createInstance();
 
 	// Pure virtual render function (override in derived class)
 	virtual void render() = 0;
