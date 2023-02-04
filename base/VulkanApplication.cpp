@@ -31,7 +31,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSe
 	// Display message to default output (console/logcat)
 	std::stringstream debugMessage;
 	debugMessage << pCallbackData->pMessage;
-	//			debugMessage << prefix << "[" << pCallbackData->messageIdNumber << "][" << pCallbackData->pMessageIdName << "] : " << pCallbackData->pMessage;
 
 #if defined(__ANDROID__)
 	if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
@@ -149,6 +148,7 @@ void VulkanApplication::prepare()
 	initSwapchain();
 	// Default command Pool
 	commandPool = new CommandPool({
+		.name = "Shared application command pool",
 		.device = *vulkanDevice,
 		.queueFamilyIndex = swapChain->queueNodeIndex, // @todo: from device
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
@@ -639,6 +639,7 @@ VulkanApplication::~VulkanApplication()
 	// @todo: deletion queue
 
 	delete overlay;
+	delete commandPool;
 	delete vulkanDevice;
 
 	if (settings.validation)

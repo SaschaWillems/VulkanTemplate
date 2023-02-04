@@ -10,7 +10,7 @@
 
 namespace vks 
 {
-	UIOverlay::UIOverlay(OverlayCreateInfo createInfo) : IDeviceResource(createInfo.device)
+	UIOverlay::UIOverlay(OverlayCreateInfo createInfo) : DeviceResource(createInfo.device)
 	{
 #if defined(__ANDROID__)		
 		if (vks::android::screenDensity >= ACONFIGURATION_DENSITY_XXHIGH) {

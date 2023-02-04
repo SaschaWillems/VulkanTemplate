@@ -7,11 +7,13 @@
 #pragma once
 
 #include <string.h>
+#include "volk.h"
 #include "Device.hpp"
 
-class IDeviceResource {
+class DeviceResource {
 public:
-	std::string name{ "" };
 	vks::VulkanDevice& device;
-	IDeviceResource(vks::VulkanDevice& device) : device(device) {};
+	std::string name{ "" };
+	DeviceResource(vks::VulkanDevice& device, const std::string name = "");
+	void setDebugName(uint64_t handle, VkObjectType type);
 };

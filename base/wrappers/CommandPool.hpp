@@ -9,27 +9,28 @@
 #pragma once
 
 #include "volk.h"
-#include "Initializers.hpp"
+#include "DeviceResource.h"
 #include "VulkanTools.h"
 #include "Device.hpp"
 
 struct CommandPoolCreateInfo {
+	const std::string name{ "" };
 	vks::VulkanDevice& device;
 	uint32_t queueFamilyIndex;
 	VkCommandPoolCreateFlags flags;
 };
 
-class CommandPool {
-private:
-	vks::VulkanDevice& device;
+class CommandPool : public DeviceResource {
 public:
 	VkCommandPool handle;
-	CommandPool(CommandPoolCreateInfo createInfo) : device(createInfo.device) {
-		VkCommandPoolCreateInfo CI{};
-		CI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		CI.queueFamilyIndex = createInfo.queueFamilyIndex;
-		CI.flags = createInfo.flags;
+	CommandPool(CommandPoolCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
+		VkCommandPoolCreateInfo CI = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			.flags = createInfo.flags,
+			.queueFamilyIndex = createInfo.queueFamilyIndex,
+		};
 		VK_CHECK_RESULT(vkCreateCommandPool(device, &CI, nullptr, &handle));
+		setDebugName((uint64_t)handle, VK_OBJECT_TYPE_COMMAND_POOL);
 	}
 	~CommandPool() {
 		vkDestroyCommandPool(device, handle, nullptr);

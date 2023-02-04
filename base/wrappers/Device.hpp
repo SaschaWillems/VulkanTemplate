@@ -54,9 +54,6 @@ namespace vks
 		VkCommandPool commandPool{ VK_NULL_HANDLE };
 		VkCommandPool commandPoolTransfer{ VK_NULL_HANDLE };
 
-		/** @brief Set to true when the debug marker extension is detected */
-		bool enableDebugMarkers = false;
-
 		/** @brief Contains queue family indices */
 		struct {
 			uint32_t graphics;
@@ -66,6 +63,7 @@ namespace vks
 
 		bool hasDedicatedTransferQueue{ false };
 		bool hasDedicatedComputeQueue{ false };
+		bool hasDebugUtils{ false };
 
 		/**  @brief Typecast to VkDevice */
 		operator VkDevice() { return logicalDevice; };
@@ -170,11 +168,10 @@ namespace vks
 			vks::VulkanDevice::enabledFeatures12.pNext = &vks::VulkanDevice::enabledFeatures13;
 			deviceCreateInfo.pNext = &VulkanDevice::enabledFeatures11;
 
-			// Enable the debug marker extension if it is present (likely meaning a debugging tool is present)
-			// @todo: still required (debug utils)?
-			if (extensionSupported(VK_EXT_DEBUG_MARKER_EXTENSION_NAME)) {
-				deviceExtensions.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
-				enableDebugMarkers = true;
+			// Enable debug utils extension if available
+			if (extensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+				deviceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+				hasDebugUtils = true;
 			}
 
 			if (deviceExtensions.size() > 0) {

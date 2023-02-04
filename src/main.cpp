@@ -116,6 +116,7 @@ public:
 		});
 		
 		testPipeline = new Pipeline({
+			.name = "Fullscreen pass pipeline",
 			.device = *vulkanDevice,
 			.shaders = {
 				getAssetPath() + "shaders/fullscreen.vert",

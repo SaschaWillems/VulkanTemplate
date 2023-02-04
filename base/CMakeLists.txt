@@ -1,5 +1,5 @@
-file(GLOB BASE_SRC "*.cpp" "*.hpp" "./utilities/*.cpp" "./utilities/*.hpp" "./compilers/*.hpp" "./interfaces/*.hpp" "./platforms/*.cpp" "./wrappers/*.cpp" "./wrappers/*.hpp" "../external/imgui/*.cpp" "../external/volk/volk.c")
-file(GLOB BASE_HEADERS "*.hpp")
+file(GLOB BASE_SRC "*.cpp" "*.hpp" "./utilities/*.cpp" "./utilities/*.hpp" "./loaders/*.h" "./loaders/*.cpp" "./compilers/*.hpp" "./interfaces/*.cpp" "./interfaces/*.h" "./platforms/*.cpp" "./wrappers/*.cpp" "./wrappers/*.hpp" "../external/imgui/*.cpp" "../external/volk/volk.c")
+file(GLOB BASE_HEADERS "*.hpp" "./interfaces/*.h")
 
 add_library(base STATIC ${BASE_SRC})
 if(WIN32)

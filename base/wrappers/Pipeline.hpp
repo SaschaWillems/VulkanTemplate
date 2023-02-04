@@ -14,6 +14,7 @@
 #if defined(__ANDROID__)
 #include "Android.h"
 #endif
+#include "DeviceResource.h"
 #include "Device.hpp"
 #include "Initializers.hpp"
 #include "VulkanTools.h"
@@ -22,18 +23,21 @@
 
 enum class DynamicState { Viewport, Scissor };
 
+struct PipelineVertexInput {
+	std::vector<VkVertexInputBindingDescription> bindings{};
+	std::vector<VkVertexInputAttributeDescription> attributes{};
+};
+
 // @todo: add name (to all kind of wrapped objects)
 struct PipelineCreateInfo {
+	const std::string name{ "" };
 	vks::VulkanDevice& device;
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	std::vector<std::string> shaders{};
 	VkPipelineCache cache{ VK_NULL_HANDLE };
 	VkPipelineLayout layout;
 	VkPipelineCreateFlags flags;
-	struct {
-		std::vector<VkVertexInputBindingDescription> bindings{};
-		std::vector<VkVertexInputAttributeDescription> attributes{};
-	} vertexInput;
+	PipelineVertexInput vertexInput{};
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{};
 	VkPipelineTessellationStateCreateInfo tessellationState{};
 	VkPipelineViewportStateCreateInfo viewportState{};
@@ -48,9 +52,8 @@ struct PipelineCreateInfo {
 	bool enableHotReload{ false };
 };
 
-class Pipeline {
+class Pipeline : public DeviceResource {
 private:
-	vks::VulkanDevice& device;
 	VkPipeline handle{ VK_NULL_HANDLE };
 	std::vector<VkShaderModule> shaderModules{};
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
@@ -94,7 +97,6 @@ private:
 		createInfo.rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		createInfo.multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 		createInfo.depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-		//createInfo.colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 
 		std::vector<VkDynamicState> dstates{};
 		for (auto& s : createInfo.dynamicState) {
@@ -154,13 +156,15 @@ public:
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	bool wantsReload = false;
 
-	Pipeline(PipelineCreateInfo createInfo) : device(createInfo.device) {
+	Pipeline(PipelineCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
 		createPipelineObject(createInfo);
 
 		// Store a copy of the createInfo for hot reload		
 		if (createInfo.enableHotReload) {
 			initialCreateInfo = new PipelineCreateInfo(createInfo);
 		}
+
+		setDebugName((uint64_t)handle, VK_OBJECT_TYPE_PIPELINE);
 	};
 
 	~Pipeline() {

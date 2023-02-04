@@ -17,7 +17,7 @@
 #include <iomanip>
 #include <glm/glm.hpp>
 #include "volk.h"
-#include "IDeviceResource.hpp"
+#include "DeviceResource.h"
 #include "VulkanTools.h"
 #include "Device.hpp"
 #include "Buffer.hpp"
@@ -54,7 +54,7 @@ namespace vks
 		uint32_t frameCount{ 0 };
 	};
 
-	class UIOverlay : public IDeviceResource
+	class UIOverlay : public DeviceResource
 	{
 	private:
 		VkQueue queue;

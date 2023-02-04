@@ -13,6 +13,7 @@
 #include "Initializers.hpp"
 #include "VulkanTools.h"
 #include "Device.hpp"
+#include "DeviceResource.h"
 #include "CommandBuffer.hpp"
 
 struct ImageCreateInfo {
@@ -33,11 +34,10 @@ struct ImageCreateInfo {
 
 enum class ImageUseCase { TransferDestination, ShaderRead };
 
-class Image {
+class Image : public DeviceResource {
 private:
 	VkDeviceMemory memory;
 public:
-	vks::VulkanDevice& device;
 	VkImageType type;
 	VkFormat format;
 	VkImageLayout currentLayout;
@@ -47,7 +47,7 @@ public:
 
 	VkImage handle;
 	
-	Image(ImageCreateInfo createInfo) : device(createInfo.device) {
+	Image(ImageCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
 		VkImageCreateInfo CI{};
 		CI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		CI.imageType = createInfo.type;
@@ -74,6 +74,8 @@ public:
 		extent = createInfo.extent;
 		mipLevels = createInfo.mipLevels;
 		arrayLayers = createInfo.arrayLayers;
+		setDebugName((uint64_t)handle, VK_OBJECT_TYPE_IMAGE);
+		setDebugName((uint64_t)memory, VK_OBJECT_TYPE_DEVICE_MEMORY);
 	}
 
 	~Image() {
