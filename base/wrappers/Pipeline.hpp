@@ -58,9 +58,6 @@ private:
 	std::vector<VkShaderModule> shaderModules{};
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
 
-	// Copy of the createInfo for hot reload
-	PipelineCreateInfo* initialCreateInfo{ nullptr };
-
 	void addShader(const std::string filename) {
 
 		// @todo: also support GLSL? Or jut drop it? And what about Android?
@@ -153,6 +150,8 @@ private:
 	}
 
 public:
+	// Copy of the createInfo for hot reload
+	PipelineCreateInfo* initialCreateInfo{ nullptr };
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	bool wantsReload = false;
 

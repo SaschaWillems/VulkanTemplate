@@ -770,7 +770,7 @@ namespace vks
 				assert(result == KTX_SUCCESS);
 			}
 
-			std::vector<vks::Buffer> stagingBuffers(filenames.size());
+			std::vector<Buffer> stagingBuffers(filenames.size());
 			for (size_t i = 0; i < filenames.size(); i++) {
 				ktxTexture* ktxTexture = ktxTextures[i];
 				ktx_uint8_t* ktxTextureData = ktxTexture_GetData(ktxTexture);

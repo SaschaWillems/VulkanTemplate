@@ -17,6 +17,7 @@
 #include "CommandBuffer.hpp"
 
 struct ImageCreateInfo {
+	std::string name{ "" };
 	vks::VulkanDevice& device;
 	VkImageType type;
 	VkFormat format;
@@ -36,7 +37,7 @@ enum class ImageUseCase { TransferDestination, ShaderRead };
 
 class Image : public DeviceResource {
 private:
-	VkDeviceMemory memory;
+	VkDeviceMemory memory{ VK_NULL_HANDLE };
 public:
 	VkImageType type;
 	VkFormat format;
@@ -45,7 +46,7 @@ public:
 	uint32_t mipLevels;
 	uint32_t arrayLayers;
 
-	VkImage handle;
+	VkImage handle{ VK_NULL_HANDLE };
 	
 	Image(ImageCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
 		VkImageCreateInfo CI{};
@@ -79,7 +80,12 @@ public:
 	}
 
 	~Image() {
-		vkDestroyImage(device, handle, nullptr);
+		if (handle != VK_NULL_HANDLE) {
+			vkDestroyImage(device, handle, nullptr);
+		}
+		if (memory != VK_NULL_HANDLE) {
+			vkFreeMemory(device, memory, nullptr);
+		}
 	}
 
 	operator VkImage() const {

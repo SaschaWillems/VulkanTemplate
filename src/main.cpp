@@ -16,14 +16,13 @@ struct ShaderData {
 class Application : public VulkanApplication {
 private:
 	struct FrameObjects : public VulkanFrameObjects {
-		vks::Buffer uniformBuffer; // @todo: pointer type with initializer?
+		Buffer* uniformBuffer;
 		DescriptorSet* descriptorSet;
 	};
 	std::vector<FrameObjects> frameObjects;
 	Pipeline* testPipeline;
 	PipelineLayout* testPipelineLayout;
 	FileWatcher* fileWatcher{ nullptr };
-	vks::Buffer* uniformBuffer{ nullptr };
 	DescriptorPool* descriptorPool;
 	DescriptorSetLayout* descriptorSetLayout;
 	PipelineLayout* pipelineLayout{ nullptr };
@@ -70,11 +69,16 @@ public:
 		for (FrameObjects& frame : frameObjects) {
 			createBaseFrameObjects(frame);
 			frameObjects.resize(getFrameCount());
-			VK_CHECK_RESULT(vulkanDevice->createBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame.uniformBuffer, sizeof(ShaderData)));
-			frame.uniformBuffer.map();
+			frame.uniformBuffer = new Buffer({
+				.device = *vulkanDevice,
+				.usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+				.size = sizeof(ShaderData),
+			});
 		}
 
 		descriptorPool = new DescriptorPool({
+			.name = "Test descriptor pool",
 			.device = *vulkanDevice,
 			.maxSets = getFrameCount(),
 			.poolSizes = {
@@ -95,7 +99,7 @@ public:
 				.pool = descriptorPool,
 				.layouts = { descriptorSetLayout->handle },
 				.descriptors = {
-					{.dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &frame.uniformBuffer.descriptor }
+					{ .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &frame.uniformBuffer->descriptor }
 				}
 			});
 		}
@@ -277,7 +281,7 @@ public:
 		updateOverlay(getCurrentFrameIndex());
 		shaderData.time = time;
 		shaderData.resolution = glm::vec2(width, height);
-		memcpy(currentFrame.uniformBuffer.mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
+		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
 		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
 

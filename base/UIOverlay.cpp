@@ -44,8 +44,12 @@ namespace vks
 	UIOverlay::~UIOverlay()	{
 		ImGui::DestroyContext();
 		for (auto& frame : frameObjects) {
-			frame.vertexBuffer.destroy();
-			frame.indexBuffer.destroy();
+			if (frame.vertexBuffer) {
+				delete frame.vertexBuffer;
+			}
+			if (frame.indexBuffer) {
+				delete frame.indexBuffer;
+			}
 		}
 		vkFreeMemory(device.logicalDevice, fontMemory, nullptr);
 		delete fontImage;
@@ -87,6 +91,7 @@ namespace vks
 
 		// Create target image for copy
 		fontImage = new Image({
+			.name = "UI Overlay font image",
 			.device = device,
 			.type = VK_IMAGE_TYPE_2D,
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
@@ -98,17 +103,13 @@ namespace vks
 		fontView = new ImageView(fontImage);
 
 		// Staging buffers for font data upload
-		vks::Buffer stagingBuffer;
-
-		VK_CHECK_RESULT(device.createBuffer(
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			&stagingBuffer,
-			uploadSize));
-
-		stagingBuffer.map();
-		memcpy(stagingBuffer.mapped, fontData, uploadSize);
-		stagingBuffer.unmap();
+		Buffer* stagingBuffer = new Buffer({
+			.device = device,
+			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			.size = uploadSize,
+			.data = fontData
+		});
 
 		// Copy buffer data to font image
 		VkCommandBuffer copyCmd = device.createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -133,7 +134,7 @@ namespace vks
 
 		vkCmdCopyBufferToImage(
 			copyCmd,
-			stagingBuffer.buffer,
+			stagingBuffer->buffer,
 			*fontImage,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1,
@@ -152,7 +153,7 @@ namespace vks
 
 		device.flushCommandBuffer(copyCmd, queue, true);
 
-		stagingBuffer.destroy();
+		delete stagingBuffer;
 
 		// @todo: replace VK_DESC* constants?
 
@@ -170,6 +171,7 @@ namespace vks
 		};
 
 		descriptorPool = new DescriptorPool({
+			.name = "UI Overlay descriptor pool",
 			.device = device,
 			.maxSets = 1,
 			.poolSizes = {
@@ -302,8 +304,9 @@ namespace vks
 		cb->bindPipeline(pipeline);
 		cb->bindDescriptorSets(pipelineLayout, { descriptorSet });
 		cb->updatePushConstant(pipelineLayout, 0, &pushConstBlock);
-		cb->bindIndexBuffer(frameObjects[frameIndex].indexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-		cb->bindVertexBuffers(0, 1, { frameObjects[frameIndex].vertexBuffer.buffer });
+		// @bind functions for Buffer class
+		cb->bindIndexBuffer(frameObjects[frameIndex].indexBuffer->buffer, 0, VK_INDEX_TYPE_UINT16);
+		cb->bindVertexBuffers(0, 1, { frameObjects[frameIndex].vertexBuffer->buffer });
 
 		for (int32_t i = 0; i < imDrawData->CmdListsCount; i++)
 		{
@@ -450,22 +453,32 @@ namespace vks
 
 		// Vertex buffer
 		VkDeviceSize vertexBufferSize = imDrawData->TotalVtxCount * sizeof(ImDrawVert);
-		if ((frameObjects[frameIndex].vertexBuffer.buffer == VK_NULL_HANDLE) || (imDrawData->TotalVtxCount > frameObjects[frameIndex].vertexCount)) {
-			frameObjects[frameIndex].vertexBuffer.unmap();
-			frameObjects[frameIndex].vertexBuffer.destroy();
-			VK_CHECK_RESULT(device.createBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &frameObjects[frameIndex].vertexBuffer, vertexBufferSize));
+		if ((!frameObjects[frameIndex].vertexBuffer) || (imDrawData->TotalVtxCount > frameObjects[frameIndex].vertexCount)) {
+			if (frameObjects[frameIndex].vertexBuffer) {
+				delete frameObjects[frameIndex].vertexBuffer;
+			}
+			frameObjects[frameIndex].vertexBuffer = new Buffer({
+				.device = device,
+				.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+				.size = vertexBufferSize,
+			});
 			frameObjects[frameIndex].vertexCount = imDrawData->TotalVtxCount;
-			frameObjects[frameIndex].vertexBuffer.map();
 		}
 
 		// Index buffer
 		VkDeviceSize indexBufferSize = imDrawData->TotalIdxCount * sizeof(ImDrawIdx);
-		if ((frameObjects[frameIndex].indexBuffer.buffer == VK_NULL_HANDLE) || (imDrawData->TotalIdxCount > frameObjects[frameIndex].indexCount)) {
-			frameObjects[frameIndex].indexBuffer.unmap();
-			frameObjects[frameIndex].indexBuffer.destroy();
-			VK_CHECK_RESULT(device.createBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &frameObjects[frameIndex].indexBuffer, indexBufferSize));
+		if ((!frameObjects[frameIndex].indexBuffer) || (imDrawData->TotalIdxCount > frameObjects[frameIndex].indexCount)) {
+			if (frameObjects[frameIndex].indexBuffer) {
+				delete frameObjects[frameIndex].indexBuffer;
+			}
+			frameObjects[frameIndex].indexBuffer = new Buffer({
+				.device = device,
+				.usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+				.size = indexBufferSize,
+			});
 			frameObjects[frameIndex].indexCount = imDrawData->TotalIdxCount;
-			frameObjects[frameIndex].indexBuffer.map();
 		}
 	}
 
@@ -478,8 +491,8 @@ namespace vks
 
 		// Upload current frame data to vertex and index buffer
 		if (imDrawData->CmdListsCount > 0) {
-			ImDrawVert* vtxDst = (ImDrawVert*)frameObjects[frameIndex].vertexBuffer.mapped;
-			ImDrawIdx* idxDst = (ImDrawIdx*)frameObjects[frameIndex].indexBuffer.mapped;
+			ImDrawVert* vtxDst = (ImDrawVert*)frameObjects[frameIndex].vertexBuffer->mapped;
+			ImDrawIdx* idxDst = (ImDrawIdx*)frameObjects[frameIndex].indexBuffer->mapped;
 
 			for (int n = 0; n < imDrawData->CmdListsCount; n++) {
 				const ImDrawList* cmd_list = imDrawData->CmdLists[n];
@@ -490,8 +503,8 @@ namespace vks
 			}
 
 			// Flush to make buffer writes visible to GPU
-			frameObjects[frameIndex].vertexBuffer.flush();
-			frameObjects[frameIndex].indexBuffer.flush();
+			frameObjects[frameIndex].vertexBuffer->flush();
+			frameObjects[frameIndex].indexBuffer->flush();
 		}
 	}
 }

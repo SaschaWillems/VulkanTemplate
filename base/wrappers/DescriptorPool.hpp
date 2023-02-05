@@ -11,21 +11,21 @@
 #include "volk.h"
 #include "Initializers.hpp"
 #include "VulkanTools.h"
+#include "DeviceResource.h"
 #include "Device.hpp"
 
 struct DescriptorPoolCreateInfo {
+	const std::string name{ "" };
 	vks::VulkanDevice& device;
 	uint32_t maxSets;
 	std::vector<VkDescriptorPoolSize> poolSizes;
 };
 
-class DescriptorPool {
-private:
-	vks::VulkanDevice& device;
+class DescriptorPool : public DeviceResource {
 public:
 	VkDescriptorPool handle;
 	
-	DescriptorPool(DescriptorPoolCreateInfo createInfo) : device(createInfo.device) {
+	DescriptorPool(DescriptorPoolCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
 		assert(createInfo.poolSizes.size() > 0);
 		assert(createInfo.maxSets > 0);
 		VkDescriptorPoolCreateInfo CI{};

@@ -74,8 +74,8 @@ namespace vks
 		void preparePipeline(const VkPipelineCache pipelineCache, VkFormat colorFormat, VkFormat depthFormat);
 	public:
 		struct FrameObjects {
-			vks::Buffer vertexBuffer;
-			vks::Buffer indexBuffer;
+			Buffer* vertexBuffer;
+			Buffer* indexBuffer;
 			int32_t vertexCount{ 0 };
 			int32_t indexCount{ 0 };
 		};

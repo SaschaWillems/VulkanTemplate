@@ -13,7 +13,7 @@
 #include <algorithm>
 #include "volk.h"
 #include "VulkanTools.h"
-#include "Buffer.hpp"
+//#include "Buffer.hpp"
 
 enum class QueueType { Graphics, Compute, Transfer };
 
@@ -297,138 +297,26 @@ namespace vks
 			throw std::runtime_error("Could not find a matching queue family index");
 		}
 
-		/**
-		* Create a buffer on the device
-		*
-		* @param usageFlags Usage flag bitmask for the buffer (i.e. index, vertex, uniform buffer)
-		* @param memoryPropertyFlags Memory properties for this buffer (i.e. device local, host visible, coherent)
-		* @param size Size of the buffer in byes
-		* @param buffer Pointer to the buffer handle acquired by the function
-		* @param memory Pointer to the memory handle acquired by the function
-		* @param data Pointer to the data that should be copied to the buffer after creation (optional, if not set, no data is copied over)
-		*
-		* @return VK_SUCCESS if buffer handle and memory have been created and (optionally passed) data has been copied
-		*/
-		VkResult createBuffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, VkDeviceSize size, VkBuffer* buffer, VkDeviceMemory* memory, void* data = nullptr)
-		{
-			// Create the buffer handle
-			VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo(usageFlags, size);
-			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			VK_CHECK_RESULT(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, buffer));
+		// @todo
+		//void copyBuffer(Buffer* src, Buffer* dst, VkQueue queue, VkBufferCopy* copyRegion = nullptr)
+		//{
+		//	//assert(dst->size <= src->size);
+		//	assert(src->buffer);
+		//	VkCommandBuffer copyCmd = createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		//	VkBufferCopy bufferCopy{};
+		//	if (copyRegion == nullptr)
+		//	{
+		//		bufferCopy.size = src->size;
+		//	}
+		//	else
+		//	{
+		//		bufferCopy = *copyRegion;
+		//	}
 
-			// Create the memory backing up the buffer handle
-			VkMemoryRequirements memReqs;
-			VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-			vkGetBufferMemoryRequirements(logicalDevice, *buffer, &memReqs);
-			memAlloc.allocationSize = memReqs.size;
-			// Find a memory type index that fits the properties of the buffer
-			memAlloc.memoryTypeIndex = getMemoryType(memReqs.memoryTypeBits, memoryPropertyFlags);
-			VK_CHECK_RESULT(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, memory));
+		//	vkCmdCopyBuffer(copyCmd, src->buffer, dst->buffer, 1, &bufferCopy);
 
-			// If a pointer to the buffer data has been passed, map the buffer and copy over the data
-			if (data != nullptr)
-			{
-				void* mapped;
-				VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
-				memcpy(mapped, data, size);
-				// If host coherency hasn't been requested, do a manual flush to make writes visible
-				if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
-				{
-					VkMappedMemoryRange mappedRange = vks::initializers::mappedMemoryRange();
-					mappedRange.memory = *memory;
-					mappedRange.offset = 0;
-					mappedRange.size = size;
-					vkFlushMappedMemoryRanges(logicalDevice, 1, &mappedRange);
-				}
-				vkUnmapMemory(logicalDevice, *memory);
-			}
-
-			// Attach the memory to the buffer object
-			VK_CHECK_RESULT(vkBindBufferMemory(logicalDevice, *buffer, *memory, 0));
-
-			return VK_SUCCESS;
-		}
-
-		/**
-		* Create a buffer on the device
-		*
-		* @param usageFlags Usage flag bitmask for the buffer (i.e. index, vertex, uniform buffer)
-		* @param memoryPropertyFlags Memory properties for this buffer (i.e. device local, host visible, coherent)
-		* @param buffer Pointer to a vk::Vulkan buffer object
-		* @param size Size of the buffer in byes
-		* @param data Pointer to the data that should be copied to the buffer after creation (optional, if not set, no data is copied over)
-		*
-		* @return VK_SUCCESS if buffer handle and memory have been created and (optionally passed) data has been copied
-		*/
-		VkResult createBuffer(VkBufferUsageFlags usageFlags, VkMemoryPropertyFlags memoryPropertyFlags, vks::Buffer* buffer, VkDeviceSize size, void* data = nullptr)
-		{
-			buffer->device = logicalDevice;
-
-			// Create the buffer handle
-			VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo(usageFlags, size);
-			VK_CHECK_RESULT(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, &buffer->buffer));
-
-			// Create the memory backing up the buffer handle
-			VkMemoryRequirements memReqs;
-			VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-			vkGetBufferMemoryRequirements(logicalDevice, buffer->buffer, &memReqs);
-			memAlloc.allocationSize = memReqs.size;
-			// Find a memory type index that fits the properties of the buffer
-			memAlloc.memoryTypeIndex = getMemoryType(memReqs.memoryTypeBits, memoryPropertyFlags);
-			VK_CHECK_RESULT(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, &buffer->memory));
-
-			buffer->alignment = memReqs.alignment;
-			buffer->size = memAlloc.allocationSize;
-			buffer->usageFlags = usageFlags;
-			buffer->memoryPropertyFlags = memoryPropertyFlags;
-
-			// If a pointer to the buffer data has been passed, map the buffer and copy over the data
-			if (data != nullptr)
-			{
-				VK_CHECK_RESULT(buffer->map());
-				memcpy(buffer->mapped, data, size);
-				if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
-					buffer->flush();
-
-				buffer->unmap();
-			}
-
-			// Initialize a default descriptor that covers the whole buffer size
-			buffer->setupDescriptor();
-
-			// Attach the memory to the buffer object
-			return buffer->bind();
-		}
-
-		/**
-		* Copy buffer data from src to dst using VkCmdCopyBuffer
-		*
-		* @param src Pointer to the source buffer to copy from
-		* @param dst Pointer to the destination buffer to copy tp
-		* @param queue Pointer
-		* @param copyRegion (Optional) Pointer to a copy region, if NULL, the whole buffer is copied
-		*
-		* @note Source and destionation pointers must have the approriate transfer usage flags set (TRANSFER_SRC / TRANSFER_DST)
-		*/
-		void copyBuffer(vks::Buffer* src, vks::Buffer* dst, VkQueue queue, VkBufferCopy* copyRegion = nullptr)
-		{
-			//assert(dst->size <= src->size);
-			assert(src->buffer);
-			VkCommandBuffer copyCmd = createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-			VkBufferCopy bufferCopy{};
-			if (copyRegion == nullptr)
-			{
-				bufferCopy.size = src->size;
-			}
-			else
-			{
-				bufferCopy = *copyRegion;
-			}
-
-			vkCmdCopyBuffer(copyCmd, src->buffer, dst->buffer, 1, &bufferCopy);
-
-			flushCommandBuffer(copyCmd, queue);
-		}
+		//	flushCommandBuffer(copyCmd, queue);
+		//}
 
 		/**
 		* Create a command pool for allocation command buffers from
