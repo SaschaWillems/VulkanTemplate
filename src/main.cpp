@@ -166,10 +166,9 @@ public:
 		});
 
 		fileWatcher = new FileWatcher();
-		fileWatcher->addFile(getAssetPath() + "shaders/fullscreen.frag");
-		fileWatcher->addFile(getAssetPath() + "shaders/fullscreen.vert");
-		fileWatcher->onFileChanged = [=](const std::string f) {
-			this->onFileChanged(f);
+		fileWatcher->addPipeline(testPipeline);
+		fileWatcher->onFileChanged = [=](const std::string filename, const std::vector<void*> userdata) {
+			this->onFileChanged(filename, userdata);
 		};		
 		fileWatcher->start();
 
@@ -296,10 +295,14 @@ public:
 		overlay.text("Timer: %f", timer);
 	}
 
-	void onFileChanged(const std::string filename) {
+	void onFileChanged(const std::string filename, const std::vector<void*> owners) {
 		// @todo
 		std::cout << filename << " was modified\n";
-		testPipeline->wantsReload = true;
+		for (auto& owner : owners) {
+			if (owner == testPipeline) {
+				testPipeline->wantsReload = true;
+			}
+		}
 	}
 
 };

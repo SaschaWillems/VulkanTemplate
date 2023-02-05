@@ -16,13 +16,17 @@
 #include <filesystem>
 #include <iostream>
 #include <functional>
+#include "Pipeline.hpp"
 
- // @todo: add link back to e.g. pipeline
+struct FileWatchInfo {
+    std::filesystem::file_time_type filetime;
+    std::vector<void*> owners{};
+};
 
 class FileWatcher {
 private:
     std::thread thread;
-    std::unordered_map<std::string, std::filesystem::file_time_type> files{};
+    std::unordered_map<std::string, FileWatchInfo> files{};
 	std::chrono::duration<int, std::milli> interval{ 1000 };
 	bool active = true;
 
@@ -33,20 +37,34 @@ private:
             // Check if files have been modified
             for (auto& file : files) {
                 auto current_file_last_write_time = std::filesystem::last_write_time(file.first);
-                if (file.second != current_file_last_write_time) {
-                    files[file.first] = current_file_last_write_time;
-                    onFileChanged(file.first);
+                if (file.second.filetime != current_file_last_write_time) {
+                    files[file.first].filetime = current_file_last_write_time;
+                    onFileChanged(file.first, file.second.owners);
                 }
             }
         }
     }
 
 public:
-    std::function<void(const std::string)> onFileChanged;
+    std::function<void(const std::string, const std::vector<void*> owners)> onFileChanged;
 
-	void addFile(const std::string filename) {
-        files[filename] = std::filesystem::last_write_time(filename);
+	void addFile(const std::string filename, void* owner) {
+        if (files.find(filename) == files.end()) {
+            files[filename] = FileWatchInfo{
+                .filetime = std::filesystem::last_write_time(filename),
+                .owners = { owner }
+            };
+        } else {
+            // If the file is already present, only attach userData to the list, so the owning object gets properly notified
+            files[filename].owners.push_back(owner);
+        }
 	}
+
+    void addPipeline(Pipeline* pipeline) {
+        for (auto& filename : pipeline->initialCreateInfo->shaders) {
+            addFile(filename, pipeline);
+        }
+    }
 
 	void start() {
         active = true;
