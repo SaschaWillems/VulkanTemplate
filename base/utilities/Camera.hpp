@@ -30,7 +30,9 @@ private:
 		}
 		else
 		{
-			// @todo
+			matrices.view = glm::translate(glm::mat4(1.0f), position);
+			matrices.view = glm::rotate(matrices.view, glm::radians(pitch), glm::vec3(-1.0f, 0.0f, 0.0f));
+			matrices.view = glm::rotate(matrices.view, glm::radians(yaw), glm::vec3(.0f, 1.0f, 0.0f));
 		}
 
 		updated = true;

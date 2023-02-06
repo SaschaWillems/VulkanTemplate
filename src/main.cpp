@@ -7,8 +7,13 @@
 #include "VulkanContext.h"
 #include "FileWatcher.hpp"
 #include <VulkanApplication.h>
+#include "glTF.h"
+
+// @todo: asset manager
 
 struct ShaderData {
+	glm::mat4 projection;
+	glm::mat4 view;
 	float time{ 0.0f };
 	glm::vec2 resolution{ 0.0f, 0.0f };
 } shaderData;
@@ -21,12 +26,14 @@ private:
 	};
 	std::vector<FrameObjects> frameObjects;
 	Pipeline* testPipeline;
+	Pipeline* glTFPipeline;
 	PipelineLayout* testPipelineLayout;
 	FileWatcher* fileWatcher{ nullptr };
 	DescriptorPool* descriptorPool;
 	DescriptorSetLayout* descriptorSetLayout;
 	PipelineLayout* pipelineLayout{ nullptr };
 	float time{ 0.0f };
+	vkglTF::Model* model{ nullptr };
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -50,10 +57,25 @@ public:
 			fileWatcher->stop();
 			delete fileWatcher;
 		}
+		if (model) {
+			delete model;
+		}
+		delete testPipeline;
+		delete glTFPipeline;
+		delete descriptorPool;
+		delete descriptorSetLayout;
+		delete pipelineLayout;
 	}
 
 	void prepare() {
 		VulkanApplication::prepare();
+
+		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
+		camera.type = Camera::CameraType::lookat;
+		//camera.type = Camera::CameraType::firstperson;
+		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, 1024.0f);
+		camera.rotate(90.0f, 0.0f);
+		camera.setPosition({ 0.0f, 0.0f, -8.0f });
 
 		VulkanContext::graphicsQueue = queue;
 		VulkanContext::device = vulkanDevice;
@@ -89,7 +111,7 @@ public:
 		descriptorSetLayout = new DescriptorSetLayout({
 			.device = *vulkanDevice,
 			.bindings = {
-				{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
+				{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT }
 			}
 		});
 
@@ -147,12 +169,6 @@ public:
 			.depthStencilState = {
 				.depthTestEnable = VK_FALSE,
 				.depthWriteEnable = VK_FALSE,
-				.front = {
-					.compareOp = VK_COMPARE_OP_ALWAYS,
-				},
-				.back = {
-					.compareOp = VK_COMPARE_OP_ALWAYS,
-				}
 			},
 			.blending = {
 				.attachments = { blendAttachmentState }
@@ -172,6 +188,56 @@ public:
 		};		
 		fileWatcher->start();
 
+		// @todo: hot reload for gltf
+		model = new vkglTF::Model({
+			.device = *vulkanDevice,
+			.filename = getAssetPath() + "models/sphere.gltf",
+			.queue = VulkanContext::graphicsQueue
+		});
+
+		glTFPipeline = new Pipeline({
+			.device = *vulkanDevice,
+			.shaders = {
+				getAssetPath() + "shaders/gltf.vert",
+				getAssetPath() + "shaders/gltf.frag"
+			},
+			.cache = pipelineCache,
+			.layout = *testPipelineLayout,
+			.vertexInput = model->getPipelineVertexInput(),
+			.inputAssemblyState = {
+				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+			},
+			.viewportState = {
+				.viewportCount = 1,
+				.scissorCount = 1
+			},
+			.rasterizationState = {
+				.polygonMode = VK_POLYGON_MODE_FILL,
+				.cullMode = VK_CULL_MODE_BACK_BIT,
+				.frontFace = VK_FRONT_FACE_CLOCKWISE,
+				.lineWidth = 1.0f
+			},
+			.multisampleState = {
+				.rasterizationSamples = settings.sampleCount,
+			},
+			.depthStencilState = {
+				.depthTestEnable = VK_TRUE,
+				.depthWriteEnable = VK_TRUE,
+				.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			},
+			.blending = {
+				.attachments = { blendAttachmentState }
+			},
+			.dynamicState = {
+				DynamicState::Scissor,
+				DynamicState::Viewport
+			},
+			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
+			.enableHotReload = true
+		});
+
+		fileWatcher->addPipeline(glTFPipeline);
+
 		prepared = true;
 	}
 
@@ -186,8 +252,7 @@ public:
 
 		// New structures are used to define the attachments used in dynamic rendering
 		VkRenderingAttachmentInfo colorAttachment{};
-		VkRenderingAttachmentInfo depthStencilAttachment{};
-		VkRenderingInfo renderingInfo{};
+		VkRenderingAttachmentInfo depthStencilAttachment{};		
 
 		// Transition color and depth images for drawing
 		cb->insertImageMemoryBarrier(
@@ -215,8 +280,8 @@ public:
 		colorAttachment.imageView = multiSampling ? multisampleTarget.color.view : swapChain->buffers[swapChain->currentImageIndex].view;
 		colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		colorAttachment.clearValue.color = { 0.0f,0.0f,0.0f,0.0f };
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachment.clearValue.color = { 0.0f, 0.0f, 0.0f, 0.0f };
 		if (multiSampling) {
 			colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 			colorAttachment.resolveImageView = swapChain->buffers[swapChain->currentImageIndex].view;
@@ -230,7 +295,7 @@ public:
 		depthStencilAttachment.imageView = multiSampling ? multisampleTarget.depth.view : depthStencil.view;
 		depthStencilAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL_KHR;
 		depthStencilAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthStencilAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depthStencilAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		depthStencilAttachment.clearValue.depthStencil = { 1.0f,  0 };
 		if (multiSampling) {
 			depthStencilAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
@@ -238,14 +303,15 @@ public:
 			depthStencilAttachment.resolveMode = VK_RESOLVE_MODE_NONE;
 		}
 
-		renderingInfo = {};
-		renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
-		renderingInfo.renderArea = { 0, 0, width, height };
-		renderingInfo.layerCount = 1;
-		renderingInfo.colorAttachmentCount = 1;
-		renderingInfo.pColorAttachments = &colorAttachment;
-		renderingInfo.pDepthAttachment = &depthStencilAttachment;
-		renderingInfo.pStencilAttachment = &depthStencilAttachment;
+		VkRenderingInfo renderingInfo = {
+			.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
+			.renderArea = { 0, 0, width, height },
+			.layerCount = 1,
+			.colorAttachmentCount = 1,
+			.pColorAttachments = &colorAttachment,
+			.pDepthAttachment = &depthStencilAttachment,
+			.pStencilAttachment = &depthStencilAttachment
+		};
 
 		cb->beginRendering(renderingInfo);
 		cb->setViewport(0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
@@ -254,6 +320,10 @@ public:
 		cb->bindPipeline(testPipeline);
 		cb->bindDescriptorSets(testPipelineLayout, { frame.descriptorSet });
 		cb->draw(3, 1, 0, 0);
+
+		// @todo
+		cb->bindPipeline(glTFPipeline);
+		model->draw(cb->handle);
 
 		if (overlay->visible) {
 			overlay->draw(cb, getCurrentFrameIndex());
@@ -280,12 +350,18 @@ public:
 		updateOverlay(getCurrentFrameIndex());
 		shaderData.time = time;
 		shaderData.resolution = glm::vec2(width, height);
+		shaderData.projection = camera.matrices.perspective;
+		shaderData.view = camera.matrices.view;
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
 		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
 
 		if (testPipeline->wantsReload) {
 			testPipeline->reload();
+		}
+
+		if (glTFPipeline->wantsReload) {
+			glTFPipeline->reload();
 		}
 
 		time += frameTimer;
@@ -301,6 +377,9 @@ public:
 		for (auto& owner : owners) {
 			if (owner == testPipeline) {
 				testPipeline->wantsReload = true;
+			}
+			if (owner == glTFPipeline) {
+				glTFPipeline->wantsReload = true;
 			}
 		}
 	}

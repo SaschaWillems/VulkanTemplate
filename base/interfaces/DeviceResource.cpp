@@ -9,6 +9,7 @@
 DeviceResource::DeviceResource(vks::VulkanDevice& device, const std::string name) : device(device), name(name) {};
 
 void DeviceResource::setDebugName(uint64_t handle, VkObjectType type) {
+	if (device.hasDebugUtils) {
 		VkDebugUtilsObjectNameInfoEXT objectNameInfo = {
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
 			.objectType = type,
@@ -16,4 +17,5 @@ void DeviceResource::setDebugName(uint64_t handle, VkObjectType type) {
 			.pObjectName = name.c_str()
 		};
 		vkSetDebugUtilsObjectNameEXT(device, &objectNameInfo);
+	}
 }

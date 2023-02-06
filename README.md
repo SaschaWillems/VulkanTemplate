@@ -14,5 +14,7 @@ Includes
 - volk
 - dxc
 
-Uses
+Functionality
 - dynamic rendering
+- hlsl shaders
+- hot shader reload
