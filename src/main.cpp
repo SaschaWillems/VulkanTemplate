@@ -366,12 +366,10 @@ public:
 		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
 
-		if (testPipeline->wantsReload) {
-			testPipeline->reload();
-		}
-
-		if (glTFPipeline->wantsReload) {
-			glTFPipeline->reload();
+		for (auto& pipeline : pipelineList) {
+			if (pipeline->wantsReload) {
+				pipeline->reload();
+			}
 		}
 
 		time += frameTimer;
