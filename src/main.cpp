@@ -10,6 +10,8 @@
 #include "glTF.h"
 
 // @todo: asset manager
+std::vector<Pipeline*> pipelineList{};
+std::vector<vkglTF::Model*> modelList{};
 
 struct ShaderData {
 	glm::mat4 projection;
@@ -179,14 +181,7 @@ public:
 			},
 			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
 			.enableHotReload = true
-		});
-
-		fileWatcher = new FileWatcher();
-		fileWatcher->addPipeline(testPipeline);
-		fileWatcher->onFileChanged = [=](const std::string filename, const std::vector<void*> userdata) {
-			this->onFileChanged(filename, userdata);
-		};		
-		fileWatcher->start();
+			});
 
 		// @todo: hot reload for gltf
 		model = new vkglTF::Model({
@@ -234,9 +229,24 @@ public:
 			},
 			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
 			.enableHotReload = true
-		});
+			});
 
-		fileWatcher->addPipeline(glTFPipeline);
+		pipelineList.push_back(testPipeline);
+		pipelineList.push_back(glTFPipeline);
+		modelList.push_back(model);
+
+		fileWatcher = new FileWatcher();
+		for (auto& pipeline : pipelineList) {
+			fileWatcher->addPipeline(pipeline);
+		}
+		for (auto& model : modelList) {
+			fileWatcher->addFile(model->initialCreateInfo->filename, model);
+		}
+		fileWatcher->onFileChanged = [=](const std::string filename, const std::vector<void*> userdata) {
+			this->onFileChanged(filename, userdata);
+		};
+		fileWatcher->start();
+
 
 		prepared = true;
 	}
@@ -372,14 +382,10 @@ public:
 	}
 
 	void onFileChanged(const std::string filename, const std::vector<void*> owners) {
-		// @todo
 		std::cout << filename << " was modified\n";
 		for (auto& owner : owners) {
-			if (owner == testPipeline) {
-				testPipeline->wantsReload = true;
-			}
-			if (owner == glTFPipeline) {
-				glTFPipeline->wantsReload = true;
+			if (std::find(pipelineList.begin(), pipelineList.end(), owner) != pipelineList.end()) {
+				static_cast<Pipeline*>(owner)->wantsReload = true;
 			}
 		}
 	}
