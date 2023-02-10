@@ -317,23 +317,12 @@ namespace vkglTF
 	// Mesh
 	Mesh::Mesh(vks::VulkanDevice *device, glm::mat4 matrix) {
 		this->device = device;
-		this->uniformBlock.matrix = matrix;
-		// @todo: use push constants instead of one ubo per node
-		uniformBuffer = new Buffer({
-			.device = *device,
-			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			.size = sizeof(UniformBlock),
-			.data = &uniformBlock
-		});
-		uniformBuffer->descriptor = { uniformBuffer->buffer, 0, sizeof(uniformBlock) };
 	};
 
 	Mesh::~Mesh() {
-		vkDestroyBuffer(device->logicalDevice, uniformBuffer->buffer, nullptr);
-		vkFreeMemory(device->logicalDevice, uniformBuffer->memory, nullptr);
-		for (Primitive* p : primitives)
+		for (Primitive* p : primitives) {
 			delete p;
+		}
 	}
 
 	void Mesh::setBoundingBox(glm::vec3 min, glm::vec3 max) {
@@ -361,7 +350,6 @@ namespace vkglTF
 		if (mesh) {
 			glm::mat4 m = getMatrix();
 			if (skin) {
-				mesh->uniformBlock.matrix = m;
 				// Update join matrices
 				glm::mat4 inverseTransform = glm::inverse(m);
 				size_t numJoints = std::min((uint32_t)skin->joints.size(), MAX_NUM_JOINTS);
@@ -369,12 +357,10 @@ namespace vkglTF
 					vkglTF::Node *jointNode = skin->joints[i];
 					glm::mat4 jointMat = jointNode->getMatrix() * skin->inverseBindMatrices[i];
 					jointMat = inverseTransform * jointMat;
-					mesh->uniformBlock.jointMatrix[i] = jointMat;
+					//mesh->uniformBlock.jointMatrix[i] = jointMat;
 				}
-				mesh->uniformBlock.jointcount = (float)numJoints;
-				memcpy(mesh->uniformBuffer->mapped, &mesh->uniformBlock, sizeof(mesh->uniformBlock));
-			} else {
-				memcpy(mesh->uniformBuffer->mapped, &m, sizeof(glm::mat4));
+				//mesh->uniformBlock.jointcount = (float)numJoints;
+				//memcpy(mesh->uniformBuffer->mapped, &mesh->uniformBlock, sizeof(mesh->uniformBlock));
 			}
 		}
 
@@ -420,7 +406,12 @@ namespace vkglTF
 		}
 		if (node.matrix.size() == 16) {
 			newNode->matrix = glm::make_mat4x4(node.matrix.data());
-		};
+		}
+		else {
+			newNode->matrix = glm::translate(glm::mat4(1.0f), translation);
+			newNode->matrix = newNode->matrix * glm::toMat4(newNode->rotation);
+			newNode->matrix = glm::scale(newNode->matrix, scale);
+		}
 
 		// Node with children
 		if (node.children.size() > 0) {
@@ -966,7 +957,7 @@ namespace vkglTF
 		}
 	}
 
-	Model::Model(ModelCreateInfo createInfo) : device(createInfo.device) {
+	Model::Model(ModelCreateInfo createInfo) : device(createInfo.device), pipelineLayout(createInfo.pipelineLayout) {
 		tinygltf::Model gltfModel;
 		tinygltf::TinyGLTF gltfContext;
 
@@ -1102,39 +1093,31 @@ namespace vkglTF
 		delete[] loaderInfo.indexBuffer;
 
 		getSceneDimensions();
+
+		// Store a copy of the createInfo for hot reload		
+		if (createInfo.enableHotReload) {
+			initialCreateInfo = new ModelCreateInfo(createInfo);
+		}
 	}
 
 	Model::~Model() 
 	{
-		if (vertices) {
-			delete vertices;
-		}
-		if (indices) {
-			delete indices;
-		}
-		for (auto texture : textures) {
-			texture.destroy();
-		}
-		textures.resize(0);
-		textureSamplers.resize(0);
-		for (auto node : nodes) {
-			delete node;
-		}
-		materials.resize(0);
-		animations.resize(0);
-		nodes.resize(0);
-		linearNodes.resize(0);
-		extensions.resize(0);
-		for (auto skin : skins) {
-			delete skin;
-		}
-		skins.resize(0);
+		freeResources();
 	}
 
 	void Model::drawNode(Node *node, VkCommandBuffer commandBuffer)
 	{
 		if (node->mesh) {
 			for (Primitive *primitive : node->mesh->primitives) {
+				// @todo: optimize, only recalculate if necessary
+				glm::mat4 nodeMatrix = node->matrix;
+				Node* currentParent = node->parent;
+				while (currentParent) {
+					nodeMatrix = currentParent->matrix * nodeMatrix;
+					currentParent = currentParent->parent;
+				}
+				// Pass the final matrix to the vertex shader using push constants
+				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &nodeMatrix);
 				vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
 			}
 		}
@@ -1173,6 +1156,33 @@ namespace vkglTF
 		for (auto &child : node->children) {
 			calculateBoundingBox(child, node);
 		}
+	}
+
+	void Model::freeResources()
+	{
+		if (vertices) {
+			delete vertices;
+		}
+		if (indices) {
+			delete indices;
+		}
+		for (auto texture : textures) {
+			texture.destroy();
+		}
+		textures.resize(0);
+		textureSamplers.resize(0);
+		for (auto node : nodes) {
+			delete node;
+		}
+		materials.resize(0);
+		animations.resize(0);
+		nodes.resize(0);
+		linearNodes.resize(0);
+		extensions.resize(0);
+		for (auto skin : skins) {
+			delete skin;
+		}
+		skins.resize(0);
 	}
 
 	void Model::getSceneDimensions()

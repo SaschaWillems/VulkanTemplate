@@ -26,6 +26,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/string_cast.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 // ERROR is already defined in wingdi.h and collides with a define in the Draco headers
 #if defined(_WIN32) && defined(ERROR) && defined(TINYGLTF_ENABLE_DRACO) 
@@ -137,13 +138,11 @@ namespace vkglTF
 		std::vector<Primitive*> primitives;
 		BoundingBox bb;
 		BoundingBox aabb;
-		// @todo: push descriptor instead of ubo
-		Buffer* uniformBuffer;
-		struct UniformBlock {
-			glm::mat4 matrix;
-			glm::mat4 jointMatrix[MAX_NUM_JOINTS]{};
-			float jointcount{ 0 };
-		} uniformBlock;
+		// @todo: global ssbo for joint matrices
+		//struct UniformBlock {
+		//	glm::mat4 jointMatrix[MAX_NUM_JOINTS]{};
+		//	float jointcount{ 0 };
+		//} uniformBlock;
 		Mesh(vks::VulkanDevice* device, glm::mat4 matrix);
 		~Mesh();
 		void setBoundingBox(glm::vec3 min, glm::vec3 max);
@@ -200,14 +199,17 @@ namespace vkglTF
 
 	struct ModelCreateInfo {
 		vks::VulkanDevice& device;
+		VkPipelineLayout pipelineLayout;
 		const std::string filename;
 		VkQueue queue{ VK_NULL_HANDLE };
 		float scale{ 1.0f };
+		bool enableHotReload{ false };
 	};
 
 	class Model {
 	private:
 		vks::VulkanDevice& device;
+		VkPipelineLayout pipelineLayout;
 		// @todo: no fixed struct, make it dynamic (buffer doesn't care anyway)
 		struct Vertex {
 			glm::vec3 pos;
@@ -226,6 +228,7 @@ namespace vkglTF
 			size_t indexPos = 0;
 			size_t vertexPos = 0;
 		};
+		void freeResources();
 		void loadNode(vkglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, LoaderInfo& loaderInfo, float globalscale);
 		void getNodeProps(const tinygltf::Node& node, const tinygltf::Model& model, size_t& vertexCount, size_t& indexCount);
 		void loadSkins(tinygltf::Model& gltfModel);
@@ -237,6 +240,9 @@ namespace vkglTF
 		void loadAnimations(tinygltf::Model& gltfModel);
 		void calculateBoundingBox(Node* node, Node* parent);
 	public:
+		// Store the createInfo for hot reload
+		ModelCreateInfo* initialCreateInfo{ nullptr };
+
 		Buffer* vertices;
 		Buffer* indices;
 
@@ -257,6 +263,8 @@ namespace vkglTF
 			glm::vec3 min = glm::vec3(FLT_MAX);
 			glm::vec3 max = glm::vec3(-FLT_MAX);
 		} dimensions;
+
+		bool wantsReload = false;
 
 		Model(ModelCreateInfo createInfo);
 		~Model();

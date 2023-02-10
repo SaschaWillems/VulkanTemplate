@@ -10,6 +10,8 @@
 #include "glTF.h"
 
 // @todo: asset manager
+// @todo: audio (music and sfx)
+
 std::vector<Pipeline*> pipelineList{};
 std::vector<vkglTF::Model*> modelList{};
 
@@ -29,13 +31,12 @@ private:
 	std::vector<FrameObjects> frameObjects;
 	Pipeline* testPipeline;
 	Pipeline* glTFPipeline;
+	PipelineLayout* glTFPipelineLayout;
 	PipelineLayout* testPipelineLayout;
 	FileWatcher* fileWatcher{ nullptr };
 	DescriptorPool* descriptorPool;
 	DescriptorSetLayout* descriptorSetLayout;
-	PipelineLayout* pipelineLayout{ nullptr };
 	float time{ 0.0f };
-	vkglTF::Model* model{ nullptr };
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -59,14 +60,10 @@ public:
 			fileWatcher->stop();
 			delete fileWatcher;
 		}
-		if (model) {
-			delete model;
-		}
 		delete testPipeline;
 		delete glTFPipeline;
 		delete descriptorPool;
 		delete descriptorSetLayout;
-		delete pipelineLayout;
 	}
 
 	void prepare() {
@@ -76,7 +73,7 @@ public:
 		camera.type = Camera::CameraType::lookat;
 		//camera.type = Camera::CameraType::firstperson;
 		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, 1024.0f);
-		camera.rotate(90.0f, 0.0f);
+		//camera.rotate(45.0f, 45.0f);
 		camera.setPosition({ 0.0f, 0.0f, -8.0f });
 
 		VulkanContext::graphicsQueue = queue;
@@ -113,17 +110,17 @@ public:
 		descriptorSetLayout = new DescriptorSetLayout({
 			.device = *vulkanDevice,
 			.bindings = {
-				{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT }
+				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT }
 			}
 		});
 
 		for (FrameObjects& frame : frameObjects) {
-			frame.descriptorSet  = new DescriptorSet({
+			frame.descriptorSet = new DescriptorSet({
 				.device = *vulkanDevice,
 				.pool = descriptorPool,
 				.layouts = { descriptorSetLayout->handle },
 				.descriptors = {
-					{ .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &frame.uniformBuffer->descriptor }
+					{.dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &frame.uniformBuffer->descriptor }
 				}
 			});
 		}
@@ -142,7 +139,7 @@ public:
 			.device = *vulkanDevice,
 			.layouts = { descriptorSetLayout->handle },
 		});
-		
+
 		testPipeline = new Pipeline({
 			.name = "Fullscreen pass pipeline",
 			.device = *vulkanDevice,
@@ -183,11 +180,20 @@ public:
 			.enableHotReload = true
 			});
 
-		// @todo: hot reload for gltf
-		model = new vkglTF::Model({
+		glTFPipelineLayout = new PipelineLayout({
 			.device = *vulkanDevice,
-			.filename = getAssetPath() + "models/sphere.gltf",
-			.queue = VulkanContext::graphicsQueue
+			.layouts = { descriptorSetLayout->handle },
+			.pushConstantRanges = {
+				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4) }
+			}
+		});
+
+		vkglTF::Model* model = new vkglTF::Model({
+			.device = *vulkanDevice,
+			.pipelineLayout = glTFPipelineLayout->handle,
+			.filename = getAssetPath() + "models/test.gltf",
+			.queue = VulkanContext::graphicsQueue,
+			.enableHotReload = true
 		});
 
 		glTFPipeline = new Pipeline({
@@ -197,8 +203,8 @@ public:
 				getAssetPath() + "shaders/gltf.frag"
 			},
 			.cache = pipelineCache,
-			.layout = *testPipelineLayout,
-			.vertexInput = model->getPipelineVertexInput(),
+			.layout = *glTFPipelineLayout,
+			.vertexInput = model->getPipelineVertexInput(), // @todo: static
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},
@@ -333,7 +339,9 @@ public:
 
 		// @todo
 		cb->bindPipeline(glTFPipeline);
-		model->draw(cb->handle);
+		for (auto& model : modelList) {
+			model->draw(cb->handle);
+		}
 
 		if (overlay->visible) {
 			overlay->draw(cb, getCurrentFrameIndex());
@@ -372,6 +380,24 @@ public:
 			}
 		}
 
+		// @todo: work in progress
+		std::vector<vkglTF::Model*> addModeList{};
+		for (auto& model : modelList) {
+			if (model->wantsReload) {
+				vkglTF::Model* newModel = new vkglTF::Model(*model->initialCreateInfo);
+				addModeList.push_back(newModel);
+				// @todo: check if this works
+				delete model;
+				model = newModel;
+			}
+		}
+		if (!addModeList.empty()) {
+			modelList.clear();
+			for (auto& model : addModeList) {
+				modelList.push_back(model);
+			}
+		}
+
 		time += frameTimer;
 	}
 
@@ -384,6 +410,9 @@ public:
 		for (auto& owner : owners) {
 			if (std::find(pipelineList.begin(), pipelineList.end(), owner) != pipelineList.end()) {
 				static_cast<Pipeline*>(owner)->wantsReload = true;
+			}
+			if (std::find(modelList.begin(), modelList.end(), owner) != modelList.end()) {
+				static_cast<vkglTF::Model*>(owner)->wantsReload = true;
 			}
 		}
 	}
