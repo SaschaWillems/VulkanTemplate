@@ -16,7 +16,7 @@
 
 struct BufferCreateInfo {
 	const std::string name{ "" };
-	vks::VulkanDevice& device;
+	Device& device;
 	// @todo: replace with own enumes and use cases (e.g. like VMA)
 	VkBufferUsageFlags usageFlags;
 	VkMemoryPropertyFlags memoryPropertyFlags;

@@ -16,7 +16,7 @@
 
 struct DescriptorPoolCreateInfo {
 	const std::string name{ "" };
-	vks::VulkanDevice& device;
+	Device& device;
 	uint32_t maxSets;
 	std::vector<VkDescriptorPoolSize> poolSizes;
 };

@@ -14,7 +14,7 @@
 #include "Device.hpp"
 
 struct SamplerCreateInfo {
-	vks::VulkanDevice& device;
+	Device& device;
 	VkFilter magFilter = VK_FILTER_LINEAR;
 	VkFilter minFilter = VK_FILTER_LINEAR;
 	VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
@@ -34,7 +34,7 @@ struct SamplerCreateInfo {
 
 class Sampler {
 private:
-	vks::VulkanDevice& device;
+	Device& device;
 public:
 	VkSampler handle;
 

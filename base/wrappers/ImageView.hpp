@@ -17,7 +17,7 @@
 
 class ImageView {
 private:
-	vks::VulkanDevice* device = nullptr;
+	Device* device = nullptr;
 	Image* image = nullptr;
 	VkImageViewType type;
 	VkFormat format;
@@ -36,7 +36,7 @@ private:
 public:
 	VkImageView handle;
 
-	ImageView(vks::VulkanDevice* device) {
+	ImageView(Device* device) {
 		this->device = device;
 	}
 

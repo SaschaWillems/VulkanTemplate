@@ -66,7 +66,7 @@ namespace vkglTF
 		vkDestroySampler(device->logicalDevice, sampler, nullptr);
 	}
 
-	void Texture::fromglTfImage(tinygltf::Image &gltfimage, TextureSampler textureSampler, vks::VulkanDevice *device, VkQueue copyQueue)
+	void Texture::fromglTfImage(tinygltf::Image &gltfimage, TextureSampler textureSampler, Device *device, VkQueue copyQueue)
 	{
 		this->device = device;
 
@@ -315,7 +315,7 @@ namespace vkglTF
 	}
 
 	// Mesh
-	Mesh::Mesh(vks::VulkanDevice *device, glm::mat4 matrix) {
+	Mesh::Mesh(Device* device, glm::mat4 matrix) {
 		this->device = device;
 	};
 
@@ -671,7 +671,7 @@ namespace vkglTF
 		}
 	}
 
-	void Model::loadTextures(tinygltf::Model &gltfModel, vks::VulkanDevice *device, VkQueue transferQueue)
+	void Model::loadTextures(tinygltf::Model &gltfModel, Device* device, VkQueue transferQueue)
 	{
 		for (tinygltf::Texture &tex : gltfModel.textures) {
 			tinygltf::Image image = gltfModel.images[tex.source];

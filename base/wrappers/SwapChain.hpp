@@ -32,14 +32,14 @@ typedef struct _SwapChainBuffer {
 
 struct SwapChainCreateInfo {
 	VkInstance instance{ VK_NULL_HANDLE };
-	vks::VulkanDevice& device;
+	Device& device;
 };
 
 class SwapChain
 {
 private: 
 	VkInstance instance;
-	vks::VulkanDevice& device;
+	Device& device;
 	VkSurfaceKHR surface;
 public:
 	VkFormat colorFormat;

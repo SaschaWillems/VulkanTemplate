@@ -42,7 +42,7 @@ namespace vks
 {
 	struct OverlayCreateInfo
 	{
-		vks::VulkanDevice& device;
+		Device& device;
 		VkQueue queue;
 		VkPipelineCache pipelineCache;
 		VkFormat colorFormat;

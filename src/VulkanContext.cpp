@@ -12,4 +12,4 @@ VulkanContext vulkanContext{};
 
 VkQueue VulkanContext::copyQueue = VK_NULL_HANDLE;
 VkQueue VulkanContext::graphicsQueue = VK_NULL_HANDLE;
-vks::VulkanDevice* VulkanContext::device = nullptr;
+Device* VulkanContext::device = nullptr;

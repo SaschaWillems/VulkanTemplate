@@ -18,7 +18,7 @@
 
 struct ImageCreateInfo {
 	std::string name{ "" };
-	vks::VulkanDevice& device;
+	Device& device;
 	VkImageType type;
 	VkFormat format;
 	VkExtent3D extent;

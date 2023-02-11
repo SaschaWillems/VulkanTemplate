@@ -609,7 +609,7 @@ VulkanApplication::VulkanApplication()
 
 #if defined(_WIN32)
 	// Enable console if validation is active, the debug message callback will output to it
-	if (this->settings.validation)
+	//if (this->settings.validation)
 	{
 		setupConsole("Vulkan validation output");
 	}
@@ -777,7 +777,7 @@ bool VulkanApplication::initVulkan()
 	deviceCreatepNextChain = &dynamicRenderingFeatures;
 
 	// Vulkan device creation
-	vulkanDevice = new vks::VulkanDevice({
+	vulkanDevice = new Device({
 		.physicalDevice = physicalDevices[selectedDevice],
 		.enabledExtensions = enabledDeviceExtensions,
 		.requestedQueueTypes = { VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT },

@@ -31,7 +31,7 @@ namespace vks
 	/** @brief Vulkan texture base class */
 	class Texture {
 	public:
-		vks::VulkanDevice *device;
+		Device*device;
 		VkImage image = VK_NULL_HANDLE;
 		VkImageLayout imageLayout;
 		VkDeviceMemory deviceMemory;
@@ -103,7 +103,7 @@ namespace vks
 		void loadFromFile(
 			std::string filename, 
 			VkFormat format,
-			vks::VulkanDevice *device,
+			Device*device,
 			VkQueue copyQueue,
 			VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 			VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
@@ -394,7 +394,7 @@ namespace vks
 			VkFormat format,
 			uint32_t texWidth,
 			uint32_t texHeight,
-			vks::VulkanDevice *device,
+			Device*device,
 			VkQueue copyQueue,
 			VkFilter filter = VK_FILTER_LINEAR,
 			VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -569,7 +569,7 @@ namespace vks
 		void loadFromFile(
 			std::string filename,
 			VkFormat format,
-			vks::VulkanDevice *device,
+			Device*device,
 			VkQueue copyQueue,
 			VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 			VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
@@ -750,7 +750,7 @@ namespace vks
 		void loadFromFiles(
 			std::vector<std::string> filenames,
 			VkFormat format,
-			vks::VulkanDevice* device,
+			Device* device,
 			VkQueue copyQueue,
 			VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 			VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
@@ -775,6 +775,7 @@ namespace vks
 				ktxTexture* ktxTexture = ktxTextures[i];
 				ktx_uint8_t* ktxTextureData = ktxTexture_GetData(ktxTexture);
 				ktx_size_t ktxTextureSize = ktxTexture_GetSize(ktxTexture);
+				// @todo
 				device->createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &stagingBuffers[i], ktxTextureSize, ktxTextureData);
 			}
 
@@ -897,7 +898,7 @@ namespace vks
 		void loadFromFile(
 			std::string filename,
 			VkFormat format,
-			vks::VulkanDevice *device,
+			Device *device,
 			VkQueue copyQueue,
 			VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 			VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)

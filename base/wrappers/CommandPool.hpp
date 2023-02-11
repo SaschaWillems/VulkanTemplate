@@ -15,7 +15,7 @@
 
 struct CommandPoolCreateInfo {
 	const std::string name{ "" };
-	vks::VulkanDevice& device;
+	Device& device;
 	uint32_t queueFamilyIndex;
 	VkCommandPoolCreateFlags flags;
 };

@@ -68,7 +68,7 @@ namespace vkglTF
 	};
 
 	struct Texture {
-		vks::VulkanDevice *device;
+		Device* device;
 		VkImage image;
 		VkImageLayout imageLayout;
 		VkDeviceMemory deviceMemory;
@@ -81,7 +81,7 @@ namespace vkglTF
 		void updateDescriptor();
 		void destroy();
 		// Load a texture from a glTF image (stored as vector of chars loaded via stb_image) and generate a full mip chaing for it
-		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler, vks::VulkanDevice* device, VkQueue copyQueue);
+		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler, Device* device, VkQueue copyQueue);
 	};
 
 	struct Material {		
@@ -134,7 +134,7 @@ namespace vkglTF
 	};
 
 	struct Mesh {
-		vks::VulkanDevice *device;
+		Device* device;
 		std::vector<Primitive*> primitives;
 		BoundingBox bb;
 		BoundingBox aabb;
@@ -143,7 +143,7 @@ namespace vkglTF
 		//	glm::mat4 jointMatrix[MAX_NUM_JOINTS]{};
 		//	float jointcount{ 0 };
 		//} uniformBlock;
-		Mesh(vks::VulkanDevice* device, glm::mat4 matrix);
+		Mesh(Device* device, glm::mat4 matrix);
 		~Mesh();
 		void setBoundingBox(glm::vec3 min, glm::vec3 max);
 	};
@@ -198,7 +198,7 @@ namespace vkglTF
 	};
 
 	struct ModelCreateInfo {
-		vks::VulkanDevice& device;
+		Device& device;
 		VkPipelineLayout pipelineLayout;
 		const std::string filename;
 		VkQueue queue{ VK_NULL_HANDLE };
@@ -208,7 +208,7 @@ namespace vkglTF
 
 	class Model {
 	private:
-		vks::VulkanDevice& device;
+		Device& device;
 		VkPipelineLayout pipelineLayout;
 		// @todo: no fixed struct, make it dynamic (buffer doesn't care anyway)
 		struct Vertex {
@@ -232,7 +232,7 @@ namespace vkglTF
 		void loadNode(vkglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, LoaderInfo& loaderInfo, float globalscale);
 		void getNodeProps(const tinygltf::Node& node, const tinygltf::Model& model, size_t& vertexCount, size_t& indexCount);
 		void loadSkins(tinygltf::Model& gltfModel);
-		void loadTextures(tinygltf::Model& gltfModel, vks::VulkanDevice* device, VkQueue transferQueue);
+		void loadTextures(tinygltf::Model& gltfModel, Device* device, VkQueue transferQueue);
 		VkSamplerAddressMode getVkWrapMode(int32_t wrapMode);
 		VkFilter getVkFilterMode(int32_t filterMode);
 		void loadTextureSamplers(tinygltf::Model& gltfModel);

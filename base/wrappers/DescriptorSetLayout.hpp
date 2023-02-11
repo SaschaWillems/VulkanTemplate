@@ -14,14 +14,14 @@
 #include "VulkanTools.h"
 
 struct DescriptorSetLayoutCreateInfo {
-	vks::VulkanDevice& device;
+	Device& device;
 	std::vector<VkDescriptorSetLayoutBinding> bindings;
 };
 
 
 class DescriptorSetLayout {
 private:
-	vks::VulkanDevice& device;
+	Device& device;
 public:
 	VkDescriptorSetLayout handle = VK_NULL_HANDLE;
 

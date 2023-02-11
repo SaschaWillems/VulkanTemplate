@@ -114,7 +114,7 @@ public:
 	float frameTimer = 1.0f;
 	const std::string getAssetPath();
 
-	vks::VulkanDevice *vulkanDevice;
+	Device* vulkanDevice;
 
 	struct Settings {
 		bool validation = false;

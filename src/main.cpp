@@ -41,13 +41,13 @@ public:
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
 
-		vks::VulkanDevice::enabledFeatures.shaderClipDistance = VK_TRUE;
-		vks::VulkanDevice::enabledFeatures.samplerAnisotropy = VK_TRUE;
-		vks::VulkanDevice::enabledFeatures.depthClamp = VK_TRUE;
-		vks::VulkanDevice::enabledFeatures.fillModeNonSolid = VK_TRUE;
+		Device::enabledFeatures.shaderClipDistance = VK_TRUE;
+		Device::enabledFeatures.samplerAnisotropy = VK_TRUE;
+		Device::enabledFeatures.depthClamp = VK_TRUE;
+		Device::enabledFeatures.fillModeNonSolid = VK_TRUE;
 
-		vks::VulkanDevice::enabledFeatures11.multiview = VK_TRUE;
-		vks::VulkanDevice::enabledFeatures13.dynamicRendering = VK_TRUE;
+		Device::enabledFeatures11.multiview = VK_TRUE;
+		Device::enabledFeatures13.dynamicRendering = VK_TRUE;
 
 		settings.sampleCount = VK_SAMPLE_COUNT_4_BIT;
 	}

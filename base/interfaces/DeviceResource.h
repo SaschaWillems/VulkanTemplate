@@ -12,8 +12,8 @@
 
 class DeviceResource {
 public:
-	vks::VulkanDevice& device;
+	Device& device;
 	std::string name{ "" };
-	DeviceResource(vks::VulkanDevice& device, const std::string name = "");
+	DeviceResource(Device& device, const std::string name = "");
 	void setDebugName(uint64_t handle, VkObjectType type);
 };

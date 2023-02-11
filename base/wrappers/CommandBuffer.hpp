@@ -17,18 +17,18 @@
 #include "CommandPool.hpp"
 
 struct CommandBufferCreateInfo {
-	vks::VulkanDevice& device;
+	Device& device;
 	CommandPool* pool;
 };
 
 class CommandBuffer {
 private:
-	vks::VulkanDevice& device;
+	Device& device;
 	CommandPool *pool = nullptr;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 public:
 	VkCommandBuffer handle = VK_NULL_HANDLE;
-	CommandBuffer(vks::VulkanDevice& device) : device(device) {
+	CommandBuffer(Device& device) : device(device) {
 		this->device = device;
 	}
 	CommandBuffer(CommandBufferCreateInfo createInfo) : device(createInfo.device) {

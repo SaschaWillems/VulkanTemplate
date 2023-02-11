@@ -17,4 +17,4 @@ Includes
 Functionality
 - dynamic rendering
 - hlsl shaders
-- hot shader reload
+- hot reload for shaders and assets

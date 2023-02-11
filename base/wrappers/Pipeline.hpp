@@ -31,7 +31,7 @@ struct PipelineVertexInput {
 // @todo: add name (to all kind of wrapped objects)
 struct PipelineCreateInfo {
 	const std::string name{ "" };
-	vks::VulkanDevice& device;
+	Device& device;
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	std::vector<std::string> shaders{};
 	VkPipelineCache cache{ VK_NULL_HANDLE };
@@ -150,7 +150,7 @@ private:
 	}
 
 public:
-	// Copy of the createInfo for hot reload
+	// Store the createInfo for hot reload
 	PipelineCreateInfo* initialCreateInfo{ nullptr };
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	bool wantsReload = false;
@@ -173,6 +173,7 @@ public:
 	void reload() {
 		wantsReload = false;
 		assert(initialCreateInfo);
+		// @todo: move to calling function to avoid multiple wait idles
 		device.waitIdle();
 		// For hot reloads create a temp handle, so if pipeline creation fails the application will continue with the old pipeline
 		VkPipeline oldHandle = handle;

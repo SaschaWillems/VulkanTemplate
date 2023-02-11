@@ -17,7 +17,7 @@
 #include "DescriptorPool.hpp"
 
 struct DescriptorSetCreateInfo {
-	vks::VulkanDevice& device;
+	Device& device;
 	DescriptorPool* pool = nullptr;
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkWriteDescriptorSet> descriptors;

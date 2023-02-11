@@ -16,7 +16,7 @@
 #include "DescriptorSetLayout.hpp"
 
 struct PipelineLayoutCreateInfo {
-	vks::VulkanDevice& device;
+	Device& device;
 	// @todo: Use DescriptorSetLayout
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkPushConstantRange> pushConstantRanges;
@@ -24,7 +24,7 @@ struct PipelineLayoutCreateInfo {
 
 class PipelineLayout {
 private:
-	vks::VulkanDevice& device;
+	Device& device;
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkPushConstantRange> pushConstantRanges;
 public:

@@ -15,7 +15,7 @@ class VulkanContext {
 public:
 	static VkQueue copyQueue;
 	static VkQueue graphicsQueue;
-	static vks::VulkanDevice* device;
+	static Device* device;
 };
 
 extern VulkanContext vulkanContext;

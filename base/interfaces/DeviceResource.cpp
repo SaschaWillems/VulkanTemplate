@@ -6,9 +6,10 @@
 
 #include "DeviceResource.h"
 
-DeviceResource::DeviceResource(vks::VulkanDevice& device, const std::string name) : device(device), name(name) {};
+DeviceResource::DeviceResource(Device& device, const std::string name) : device(device), name(name) {};
 
 void DeviceResource::setDebugName(uint64_t handle, VkObjectType type) {
+	// @todo: or if validation
 	if (device.hasDebugUtils) {
 		VkDebugUtilsObjectNameInfoEXT objectNameInfo = {
 			.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
