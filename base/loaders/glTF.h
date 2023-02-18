@@ -80,7 +80,6 @@ namespace vkglTF
 		VkSampler sampler;
 		void updateDescriptor();
 		void destroy();
-		// Load a texture from a glTF image (stored as vector of chars loaded via stb_image) and generate a full mip chaing for it
 		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler, Device* device, VkQueue copyQueue);
 	};
 
@@ -275,6 +274,6 @@ namespace vkglTF
 		void updateAnimation(uint32_t index, float time);
 		Node* findNode(Node* parent, uint32_t index);
 		Node* nodeFromIndex(uint32_t index);
-		PipelineVertexInput getPipelineVertexInput();
+		static PipelineVertexInput getPipelineVertexInput();
 	};
 }

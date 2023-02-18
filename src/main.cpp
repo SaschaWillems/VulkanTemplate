@@ -144,8 +144,8 @@ public:
 			.name = "Fullscreen pass pipeline",
 			.device = *vulkanDevice,
 			.shaders = {
-				getAssetPath() + "shaders/fullscreen.vert",
-				getAssetPath() + "shaders/fullscreen.frag"
+				getAssetPath() + "shaders/fullscreen.vert.hlsl",
+				getAssetPath() + "shaders/fullscreen.frag.hlsl"
 			},
 			.cache = pipelineCache,
 			.layout = *testPipelineLayout,
@@ -199,12 +199,12 @@ public:
 		glTFPipeline = new Pipeline({
 			.device = *vulkanDevice,
 			.shaders = {
-				getAssetPath() + "shaders/gltf.vert",
-				getAssetPath() + "shaders/gltf.frag"
+				getAssetPath() + "shaders/gltf.vert.hlsl",
+				getAssetPath() + "shaders/gltf.frag.hlsl"
 			},
 			.cache = pipelineCache,
 			.layout = *glTFPipelineLayout,
-			.vertexInput = model->getPipelineVertexInput(), // @todo: static
+			.vertexInput = vkglTF::Model::getPipelineVertexInput(), // @todo: static
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},
@@ -215,7 +215,7 @@ public:
 			.rasterizationState = {
 				.polygonMode = VK_POLYGON_MODE_FILL,
 				.cullMode = VK_CULL_MODE_BACK_BIT,
-				.frontFace = VK_FRONT_FACE_CLOCKWISE,
+				.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
 				.lineWidth = 1.0f
 			},
 			.multisampleState = {

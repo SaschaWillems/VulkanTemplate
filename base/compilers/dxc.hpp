@@ -13,23 +13,35 @@
 #include <stdexcept>
 #include <vector>
 #include <iostream>
+#include <map>
 #include "volk.h"
 #include "dxcapi.h"
 
 class Dxc {
+private:
+	std::map<std::string, VkShaderStageFlagBits> shaderStages{
+		{ ".vert", VK_SHADER_STAGE_VERTEX_BIT },
+		{ ".frag", VK_SHADER_STAGE_FRAGMENT_BIT }
+	};
+
+	std::map<std::string, LPCWSTR> targetProfiles{
+		{ ".vert", L"vs_6_1" },
+		{ ".frag", L"ps_6_1" }
+	};
+
+	std::string fileExtension(const std::string filename) {
+		std::string fname = filename;
+		if (filename.find(".hlsl") != std::string::npos) {
+			fname = fname.substr(0, fname.length() - 5);
+		}
+		std::string fext = fname.substr(filename.find('.'));
+		return fext;
+	}
 public:
 	VkShaderStageFlagBits getShaderStage(const std::string filename) {
-		size_t extpos = filename.find('.');
-		size_t extend = filename.find('.', extpos + 1);
-		assert(extpos != std::string::npos);
-		std::string ext = filename.substr(extpos + 1, extend - extpos - 1);
-		if (ext == "vert") {
-			return VK_SHADER_STAGE_VERTEX_BIT;
-		}
-		if (ext == "frag") {
-			return VK_SHADER_STAGE_FRAGMENT_BIT; 
-		}
-		return VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+		std::string ext = fileExtension(filename);
+		assert(shaderStages.find(ext) != shaderStages.end());
+		return shaderStages[ext];
 	}
 
 	VkShaderModule compileShader(const std::string filename, VkDevice device) {
@@ -69,18 +81,9 @@ public:
 		}
 
 		// Select target profile based on shader file extension
-		LPCWSTR targetProfile{};
-		size_t idx = filename.rfind('.');
-		if (idx != std::string::npos) {
-			std::string extension = filename.substr(idx + 1);
-			if (extension == "vert") {
-				targetProfile = L"vs_6_1";
-			}
-			if (extension == "frag") {
-				targetProfile = L"ps_6_1";
-			}
-			// Mapping for other file types go here (cs_x_y, lib_x_y, etc.)
-		}
+		std::string extension = fileExtension(filename);
+		assert(targetProfiles.find(extension) != targetProfiles.end());
+		LPCWSTR targetProfile = targetProfiles[extension];
 
 		// Configure the compiler arguments for compiling the HLSL shader to SPIR-V
 		std::vector<LPCWSTR> arguments = {

@@ -82,5 +82,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 add_subdirectory(base)
 add_subdirectory(src)
 add_subdirectory(external)
+add_subdirectory(data\\shaders)
 
 target_link_libraries(VulkanTemplate ${CMAKE_CURRENT_SOURCE_DIR}/libs/dxcompiler.lib)

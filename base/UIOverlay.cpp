@@ -232,8 +232,8 @@ namespace vks
 		pipeline = new Pipeline({
 			.device = device,
 			.shaders = {
-				assetPath + "shaders/base/overlay.vert",
-				assetPath + "shaders/base/overlay.frag"
+				assetPath + "shaders/base/overlay.vert.hlsl",
+				assetPath + "shaders/base/overlay.frag.hlsl"
 			},
 			.cache = pipelineCache,
 			.layout = *pipelineLayout,
