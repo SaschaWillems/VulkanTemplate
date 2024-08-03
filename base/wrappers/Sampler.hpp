@@ -1,7 +1,7 @@
 /*
  * Sampler abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -12,9 +12,10 @@
 #include "Initializers.hpp"
 #include "VulkanTools.h"
 #include "Device.hpp"
+#include "VulkanContext.h"
 
 struct SamplerCreateInfo {
-	Device& device;
+	std::string name{ "" };
 	VkFilter magFilter = VK_FILTER_LINEAR;
 	VkFilter minFilter = VK_FILTER_LINEAR;
 	VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
@@ -32,13 +33,11 @@ struct SamplerCreateInfo {
 	VkBool32 unnormalizedCoordinates = VK_FALSE;
 };
 
-class Sampler {
-private:
-	Device& device;
+class Sampler : public DeviceResource {
 public:
 	VkSampler handle;
 
-	Sampler(SamplerCreateInfo createInfo) : device(createInfo.device) {
+	Sampler(SamplerCreateInfo createInfo) : DeviceResource(createInfo.name) {
 		VkSamplerCreateInfo CI{};
 		CI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		CI.magFilter = createInfo.magFilter;
@@ -56,11 +55,11 @@ public:
 		CI.maxLod = createInfo.maxLod;
 		CI.borderColor = createInfo.borderColor;
 		CI.unnormalizedCoordinates = createInfo.unnormalizedCoordinates;
-		VK_CHECK_RESULT(vkCreateSampler(device.logicalDevice, &CI, nullptr, &handle));
+		VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &CI, nullptr, &handle));
 	}
 
 	~Sampler() {
-		vkDestroySampler(device, handle, nullptr);
+		vkDestroySampler(VulkanContext::device->logicalDevice, handle, nullptr);
 	}
 
 	operator VkSampler() const {

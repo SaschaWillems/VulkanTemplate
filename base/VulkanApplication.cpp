@@ -145,11 +145,20 @@ const std::string VulkanApplication::getAssetPath()
 
 void VulkanApplication::prepare()
 {
+	VulkanContext::graphicsQueue = queue;
+	VulkanContext::device = vulkanDevice;
+	// We try to get a transfer queue for background uploads
+	if (vulkanDevice->hasDedicatedTransferQueue) {
+		VulkanContext::copyQueue = vulkanDevice->getQueue(QueueType::Transfer);
+	}
+	else {
+		VulkanContext::copyQueue = queue;
+	}
+
 	initSwapchain();
 	// Default command Pool
 	commandPool = new CommandPool({
 		.name = "Shared application command pool",
-		.device = *vulkanDevice,
 		.queueFamilyIndex = swapChain->queueNodeIndex, // @todo: from device
 		.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
 	});
@@ -506,7 +515,7 @@ void VulkanApplication::updateOverlay(uint32_t frameIndex)
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
 	ImGui::SetNextWindowPos(ImVec2(10, 10));
 	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_FirstUseEver);
-	ImGui::Begin("Application", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+	ImGui::Begin("Application", nullptr);
 	ImGui::TextUnformatted(title.c_str());
 	ImGui::TextUnformatted(vulkanDevice->properties.deviceName);
 	ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);

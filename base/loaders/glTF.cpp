@@ -60,16 +60,14 @@ namespace vkglTF
 
 	void Texture::destroy()
 	{
-		vkDestroyImageView(device->logicalDevice, view, nullptr);
-		vkDestroyImage(device->logicalDevice, image, nullptr);
-		vkFreeMemory(device->logicalDevice, deviceMemory, nullptr);
-		vkDestroySampler(device->logicalDevice, sampler, nullptr);
+		vkDestroyImageView(VulkanContext::device->logicalDevice, view, nullptr);
+		vkDestroyImage(VulkanContext::device->logicalDevice, image, nullptr);
+		vkFreeMemory(VulkanContext::device->logicalDevice, deviceMemory, nullptr);
+		vkDestroySampler(VulkanContext::device->logicalDevice, sampler, nullptr);
 	}
 
-	void Texture::fromglTfImage(tinygltf::Image &gltfimage, TextureSampler textureSampler, Device *device, VkQueue copyQueue)
+	void Texture::fromglTfImage(tinygltf::Image &gltfimage, TextureSampler textureSampler)
 	{
-		this->device = device;
-
 		unsigned char* buffer = nullptr;
 		VkDeviceSize bufferSize = 0;
 		bool deleteBuffer = false;
@@ -102,7 +100,7 @@ namespace vkglTF
 		height = gltfimage.height;
 		mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
 
-		vkGetPhysicalDeviceFormatProperties(device->physicalDevice, format, &formatProperties);
+		vkGetPhysicalDeviceFormatProperties(VulkanContext::device->physicalDevice, format, &formatProperties);
 		assert(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT);
 		assert(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT);
 
@@ -118,17 +116,17 @@ namespace vkglTF
 		bufferCreateInfo.size = bufferSize;
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
-		vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memReqs);
+		VK_CHECK_RESULT(vkCreateBuffer(VulkanContext::device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+		vkGetBufferMemoryRequirements(VulkanContext::device->logicalDevice, stagingBuffer, &memReqs);
 		memAllocInfo.allocationSize = memReqs.size;
-		memAllocInfo.memoryTypeIndex = device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
-		VK_CHECK_RESULT(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
+		memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+		VK_CHECK_RESULT(vkBindBufferMemory(VulkanContext::device->logicalDevice, stagingBuffer, stagingMemory, 0));
 
 		uint8_t *data;
-		VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void **)&data));
+		VK_CHECK_RESULT(vkMapMemory(VulkanContext::device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void **)&data));
 		memcpy(data, buffer, bufferSize);
-		vkUnmapMemory(device->logicalDevice, stagingMemory);
+		vkUnmapMemory(VulkanContext::device->logicalDevice, stagingMemory);
 
 		VkImageCreateInfo imageCreateInfo{};
 		imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -143,14 +141,14 @@ namespace vkglTF
 		imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageCreateInfo.extent = { width, height, 1 };
 		imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
-		vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
+		VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &imageCreateInfo, nullptr, &image));
+		vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, image, &memReqs);
 		memAllocInfo.allocationSize = memReqs.size;
-		memAllocInfo.memoryTypeIndex = device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-		VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
+		memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+		VK_CHECK_RESULT(vkBindImageMemory(VulkanContext::device->logicalDevice, image, deviceMemory, 0));
 
-		VkCommandBuffer copyCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkCommandBuffer copyCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
 		VkImageSubresourceRange subresourceRange = {};
 		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -192,13 +190,16 @@ namespace vkglTF
 			vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
 		}
 
-		device->flushCommandBuffer(copyCmd, copyQueue, true);
+		// @todo
+		VkQueue copyQueue = VulkanContext::graphicsQueue;
 
-		vkFreeMemory(device->logicalDevice, stagingMemory, nullptr);
-		vkDestroyBuffer(device->logicalDevice, stagingBuffer, nullptr);
+		VulkanContext::device->flushCommandBuffer(copyCmd, copyQueue, true);
+
+		vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
+		vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
 
 		// Generate the mip chain (glTF uses jpg and png, so we need to create this manually)
-		VkCommandBuffer blitCmd = device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkCommandBuffer blitCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 		for (uint32_t i = 1; i < mipLevels; i++) {
 			VkImageBlit imageBlit{};
 
@@ -264,7 +265,7 @@ namespace vkglTF
 			vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
 		}
 
-		device->flushCommandBuffer(blitCmd, copyQueue, true);
+		VulkanContext::device->flushCommandBuffer(blitCmd, copyQueue, true);
 
 		VkSamplerCreateInfo samplerInfo{};
 		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -281,7 +282,7 @@ namespace vkglTF
 		samplerInfo.maxLod = (float)mipLevels;
 		samplerInfo.maxAnisotropy = 8.0f;
 		samplerInfo.anisotropyEnable = VK_TRUE;
-		VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerInfo, nullptr, &sampler));
+		VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &samplerInfo, nullptr, &sampler));
 
 		VkImageViewCreateInfo viewInfo{};
 		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -292,7 +293,7 @@ namespace vkglTF
 		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		viewInfo.subresourceRange.layerCount = 1;
 		viewInfo.subresourceRange.levelCount = mipLevels;
-		VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewInfo, nullptr, &view));
+		VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewInfo, nullptr, &view));
 
 		descriptor.sampler = sampler;
 		descriptor.imageView = view;
@@ -315,8 +316,8 @@ namespace vkglTF
 	}
 
 	// Mesh
-	Mesh::Mesh(Device* device, glm::mat4 matrix) {
-		this->device = device;
+	Mesh::Mesh(glm::mat4 matrix) {
+		// @todo
 	};
 
 	Mesh::~Mesh() {
@@ -423,7 +424,7 @@ namespace vkglTF
 		// Node contains mesh data
 		if (node.mesh > -1) {
 			const tinygltf::Mesh mesh = model.meshes[node.mesh];
-			Mesh *newMesh = new Mesh(&device, newNode->matrix);
+			Mesh *newMesh = new Mesh(newNode->matrix);
 			for (size_t j = 0; j < mesh.primitives.size(); j++) {
 				const tinygltf::Primitive &primitive = mesh.primitives[j];
 				uint32_t vertexStart = static_cast<uint32_t>(loaderInfo.vertexPos);
@@ -671,7 +672,7 @@ namespace vkglTF
 		}
 	}
 
-	void Model::loadTextures(tinygltf::Model &gltfModel, Device* device, VkQueue transferQueue)
+	void Model::loadTextures(tinygltf::Model &gltfModel)
 	{
 		for (tinygltf::Texture &tex : gltfModel.textures) {
 			tinygltf::Image image = gltfModel.images[tex.source];
@@ -688,7 +689,7 @@ namespace vkglTF
 				textureSampler = textureSamplers[tex.sampler];
 			}
 			vkglTF::Texture texture;
-			texture.fromglTfImage(image, textureSampler, device, transferQueue);
+			texture.fromglTfImage(image, textureSampler);
 			textures.push_back(texture);
 		}
 	}
@@ -957,14 +958,12 @@ namespace vkglTF
 		}
 	}
 
-	Model::Model(ModelCreateInfo createInfo) : device(createInfo.device), pipelineLayout(createInfo.pipelineLayout) {
+	Model::Model(ModelCreateInfo createInfo) : pipelineLayout(createInfo.pipelineLayout) {
 		tinygltf::Model gltfModel;
 		tinygltf::TinyGLTF gltfContext;
 
 		std::string error;
 		std::string warning;
-
-		this->device = device;
 
 		bool binary = false;
 		size_t extpos = createInfo.filename.rfind('.', createInfo.filename.length());
@@ -980,7 +979,7 @@ namespace vkglTF
 
 		if (fileLoaded) {
 			loadTextureSamplers(gltfModel);
-			loadTextures(gltfModel, &createInfo.device, createInfo.queue);
+			loadTextures(gltfModel);
 			loadMaterials(gltfModel);
 
 			const tinygltf::Scene& scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
@@ -1032,7 +1031,6 @@ namespace vkglTF
 
 		// Vertex data
 		Buffer* vertexStaging = new Buffer({
-			.device = device,
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			.size = vertexBufferSize,
@@ -1042,7 +1040,6 @@ namespace vkglTF
 		// Index data
 		if (indexBufferSize > 0) {
 			indexStaging = new Buffer({
-				.device = device,
 				.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				.size = indexBufferSize,
@@ -1052,7 +1049,6 @@ namespace vkglTF
 
 		// Create device local buffers
 		vertices = new Buffer({
-			.device = device,
 			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			.memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			.size = vertexBufferSize,
@@ -1061,7 +1057,6 @@ namespace vkglTF
 		// Index buffer
 		if (indexBufferSize > 0) {
 			indices = new Buffer({
-				.device = device,
 				.usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				.memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 				.size = indexBufferSize,
@@ -1070,7 +1065,7 @@ namespace vkglTF
 		}
 
 		// Copy from staging buffers
-		VkCommandBuffer copyCmd = device.createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkCommandBuffer copyCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
 		VkBufferCopy copyRegion = {};
 
@@ -1082,7 +1077,7 @@ namespace vkglTF
 			vkCmdCopyBuffer(copyCmd, indexStaging->buffer, indices->buffer, 1, &copyRegion);
 		}
 
-		device.flushCommandBuffer(copyCmd, createInfo.queue, true);
+		VulkanContext::device->flushCommandBuffer(copyCmd, createInfo.queue, true);
 
 		if (indexBufferSize > 0) {
 			delete indexStaging;
@@ -1160,6 +1155,7 @@ namespace vkglTF
 
 	void Model::freeResources()
 	{
+		// @todo
 		if (vertices) {
 			delete vertices;
 		}

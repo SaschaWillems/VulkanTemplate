@@ -1,7 +1,7 @@
 /*
  * DXC hLSL Compiler abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -16,6 +16,7 @@
 #include <map>
 #include "volk.h"
 #include "dxcapi.h"
+#include "VulkanContext.h"
 
 class Dxc {
 private:
@@ -44,7 +45,7 @@ public:
 		return shaderStages[ext];
 	}
 
-	VkShaderModule compileShader(const std::string filename, VkDevice device) {
+	VkShaderModule compileShader(const std::string filename) {
 		HRESULT hres;
 
 		// @todo
@@ -135,7 +136,7 @@ public:
 		shaderModuleCI.codeSize = code->GetBufferSize();
 		shaderModuleCI.pCode = (uint32_t*)code->GetBufferPointer();
 		VkShaderModule shaderModule;
-		vkCreateShaderModule(device, &shaderModuleCI, nullptr, &shaderModule);
+		vkCreateShaderModule(VulkanContext::device->logicalDevice, &shaderModuleCI, nullptr, &shaderModule);
 
 		return shaderModule;
 	};

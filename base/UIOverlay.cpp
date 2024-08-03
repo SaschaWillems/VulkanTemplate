@@ -1,7 +1,7 @@
 /*
  * UI overlay class using ImGui
  *
- * Copyright (C) 2017-2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2017-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -10,7 +10,7 @@
 
 namespace vks 
 {
-	UIOverlay::UIOverlay(OverlayCreateInfo createInfo) : DeviceResource(createInfo.device)
+	UIOverlay::UIOverlay(OverlayCreateInfo createInfo) : DeviceResource("UIOverlay")
 	{
 #if defined(__ANDROID__)		
 		if (vks::android::screenDensity >= ACONFIGURATION_DENSITY_XXHIGH) {
@@ -29,6 +29,8 @@ namespace vks
 		// Dimensions
 		ImGuiIO& io = ImGui::GetIO();
 		io.FontGlobalScale = scale;
+
+		ImGui::StyleColorsLight();
 
 		frameObjects.resize(createInfo.frameCount);
 		queue = createInfo.queue;
@@ -51,7 +53,7 @@ namespace vks
 				delete frame.indexBuffer;
 			}
 		}
-		vkFreeMemory(device.logicalDevice, fontMemory, nullptr);
+		vkFreeMemory(VulkanContext::device->logicalDevice, fontMemory, nullptr);
 		delete fontImage;
 		delete fontView;
 		delete sampler;
@@ -92,7 +94,6 @@ namespace vks
 		// Create target image for copy
 		fontImage = new Image({
 			.name = "UI Overlay font image",
-			.device = device,
 			.type = VK_IMAGE_TYPE_2D,
 			.format = VK_FORMAT_R8G8B8A8_UNORM,
 			.extent = { .width = (uint32_t)texWidth, .height = (uint32_t)texHeight, .depth = 1 },
@@ -104,7 +105,6 @@ namespace vks
 
 		// Staging buffers for font data upload
 		Buffer* stagingBuffer = new Buffer({
-			.device = device,
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			.size = uploadSize,
@@ -112,7 +112,7 @@ namespace vks
 		});
 
 		// Copy buffer data to font image
-		VkCommandBuffer copyCmd = device.createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkCommandBuffer copyCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
 		// Prepare for transfer
 		vks::tools::setImageLayout(
@@ -151,14 +151,13 @@ namespace vks
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
-		device.flushCommandBuffer(copyCmd, queue, true);
+		VulkanContext::device->flushCommandBuffer(copyCmd, queue, true);
 
 		delete stagingBuffer;
 
 		// @todo: replace VK_DESC* constants?
 
 		sampler = new Sampler({
-			.device = device,			
 			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
@@ -172,7 +171,6 @@ namespace vks
 
 		descriptorPool = new DescriptorPool({
 			.name = "UI Overlay descriptor pool",
-			.device = device,
 			.maxSets = 1,
 			.poolSizes = {
 				{ .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 },
@@ -180,14 +178,12 @@ namespace vks
 		});
 
 		descriptorSetLayout = new DescriptorSetLayout({
-			.device = device,
 			.bindings = {
 				{ .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
 			}
 		});
 
 		descriptorSet = new DescriptorSet({
-			.device = device,
 			.pool = descriptorPool,
 			.layouts = { descriptorSetLayout->handle },
 			.descriptors = {
@@ -220,7 +216,6 @@ namespace vks
 		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 
 		pipelineLayout = new PipelineLayout({
-			.device = device,
 			.layouts = { descriptorSetLayout->handle },
 			.pushConstantRanges = {
 				{.stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
@@ -230,7 +225,6 @@ namespace vks
 		// @todo: thin wrappers for all vulkan structs so you can initialize the whole pipeline
 
 		pipeline = new Pipeline({
-			.device = device,
 			.shaders = {
 				assetPath + "shaders/base/overlay.vert.hlsl",
 				assetPath + "shaders/base/overlay.frag.hlsl"
@@ -458,7 +452,6 @@ namespace vks
 				delete frameObjects[frameIndex].vertexBuffer;
 			}
 			frameObjects[frameIndex].vertexBuffer = new Buffer({
-				.device = device,
 				.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 				.size = vertexBufferSize,
@@ -473,7 +466,6 @@ namespace vks
 				delete frameObjects[frameIndex].indexBuffer;
 			}
 			frameObjects[frameIndex].indexBuffer = new Buffer({
-				.device = device,
 				.usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 				.size = indexBufferSize,

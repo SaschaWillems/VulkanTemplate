@@ -1,7 +1,7 @@
 /*
  * Vulkan descriptor set abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -15,9 +15,9 @@
 #include "Device.hpp"
 #include "DescriptorSetLayout.hpp"
 #include "DescriptorPool.hpp"
+#include "VulkanContext.h"
 
 struct DescriptorSetCreateInfo {
-	Device& device;
 	DescriptorPool* pool = nullptr;
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkWriteDescriptorSet> descriptors;
@@ -25,20 +25,19 @@ struct DescriptorSetCreateInfo {
 
 class DescriptorSet {
 private:
-	VkDevice device = VK_NULL_HANDLE;
 	std::vector<VkWriteDescriptorSet> descriptors;
 public:
 	VkDescriptorSet handle;
 
-	DescriptorSet(DescriptorSetCreateInfo createInfo) : device(createInfo.device) {
+	DescriptorSet(DescriptorSetCreateInfo createInfo) {
 		descriptors = createInfo.descriptors;
 		VkDescriptorSetAllocateInfo descriptorSetAI = vks::initializers::descriptorSetAllocateInfo(createInfo.pool->handle, createInfo.layouts.data(), static_cast<uint32_t>(createInfo.layouts.size()));
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &descriptorSetAI, &handle));
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(VulkanContext::device->logicalDevice, &descriptorSetAI, &handle));
 		for (auto& descriptor : createInfo.descriptors) {
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor.dstSet = handle;
 		}
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(createInfo.descriptors.size()), createInfo.descriptors.data(), 0, nullptr);
+		vkUpdateDescriptorSets(VulkanContext::device->logicalDevice, static_cast<uint32_t>(createInfo.descriptors.size()), createInfo.descriptors.data(), 0, nullptr);
 	}
 
 	~DescriptorSet() {
@@ -80,7 +79,7 @@ public:
 				descriptor.descriptorType = type;
 				descriptor.pImageInfo = imageInfo;
 				descriptor.descriptorCount = descriptorCount;
-				vkUpdateDescriptorSets(device, 1, &descriptor, 0, nullptr);
+				vkUpdateDescriptorSets(VulkanContext::device->logicalDevice, 1, &descriptor, 0, nullptr);
 				break;
 			}
 		}

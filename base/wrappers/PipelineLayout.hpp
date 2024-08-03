@@ -1,7 +1,7 @@
 /*
  * Vulkan pipeline layout abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023--2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -16,7 +16,6 @@
 #include "DescriptorSetLayout.hpp"
 
 struct PipelineLayoutCreateInfo {
-	Device& device;
 	// @todo: Use DescriptorSetLayout
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkPushConstantRange> pushConstantRanges;
@@ -24,23 +23,22 @@ struct PipelineLayoutCreateInfo {
 
 class PipelineLayout {
 private:
-	Device& device;
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkPushConstantRange> pushConstantRanges;
 public:
 	VkPipelineLayout handle = VK_NULL_HANDLE;
 
-	PipelineLayout(PipelineLayoutCreateInfo createInfo) : device(createInfo.device) {
+	PipelineLayout(PipelineLayoutCreateInfo createInfo) {
 		layouts = createInfo.layouts;
 		pushConstantRanges = createInfo.pushConstantRanges;
 		VkPipelineLayoutCreateInfo CI = vks::initializers::pipelineLayoutCreateInfo(layouts.data(), static_cast<uint32_t>(layouts.size()));
 		CI.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
 		CI.pPushConstantRanges = pushConstantRanges.data();
-		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &CI, nullptr, &handle));
+		VK_CHECK_RESULT(vkCreatePipelineLayout(VulkanContext::device->logicalDevice, &CI, nullptr, &handle));
 	}
 
 	~PipelineLayout() {
-		vkDestroyPipelineLayout(device, handle, nullptr);
+		vkDestroyPipelineLayout(VulkanContext::device->logicalDevice, handle, nullptr);
 	}
 
 	void addPushConstantRange(uint32_t size, uint32_t offset, VkShaderStageFlags stageFlags) {

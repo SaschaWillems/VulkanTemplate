@@ -1,7 +1,7 @@
 /**
  * Vulkan glTF model and texture loading class based on tinyglTF (https://github.com/syoyo/tinygltf)
  *
- * Copyright (C) 2018-2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2018-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -18,6 +18,7 @@
 #include "Device.hpp"
 #include "Pipeline.hpp"
 #include "Buffer.hpp"
+#include "VulkanContext.h"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -68,7 +69,6 @@ namespace vkglTF
 	};
 
 	struct Texture {
-		Device* device;
 		VkImage image;
 		VkImageLayout imageLayout;
 		VkDeviceMemory deviceMemory;
@@ -80,7 +80,7 @@ namespace vkglTF
 		VkSampler sampler;
 		void updateDescriptor();
 		void destroy();
-		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler, Device* device, VkQueue copyQueue);
+		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler);
 	};
 
 	struct Material {		
@@ -133,7 +133,6 @@ namespace vkglTF
 	};
 
 	struct Mesh {
-		Device* device;
 		std::vector<Primitive*> primitives;
 		BoundingBox bb;
 		BoundingBox aabb;
@@ -142,7 +141,7 @@ namespace vkglTF
 		//	glm::mat4 jointMatrix[MAX_NUM_JOINTS]{};
 		//	float jointcount{ 0 };
 		//} uniformBlock;
-		Mesh(Device* device, glm::mat4 matrix);
+		Mesh(glm::mat4 matrix);
 		~Mesh();
 		void setBoundingBox(glm::vec3 min, glm::vec3 max);
 	};
@@ -197,7 +196,6 @@ namespace vkglTF
 	};
 
 	struct ModelCreateInfo {
-		Device& device;
 		VkPipelineLayout pipelineLayout;
 		const std::string filename;
 		VkQueue queue{ VK_NULL_HANDLE };
@@ -207,7 +205,6 @@ namespace vkglTF
 
 	class Model {
 	private:
-		Device& device;
 		VkPipelineLayout pipelineLayout;
 		// @todo: no fixed struct, make it dynamic (buffer doesn't care anyway)
 		struct Vertex {
@@ -231,7 +228,7 @@ namespace vkglTF
 		void loadNode(vkglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, LoaderInfo& loaderInfo, float globalscale);
 		void getNodeProps(const tinygltf::Node& node, const tinygltf::Model& model, size_t& vertexCount, size_t& indexCount);
 		void loadSkins(tinygltf::Model& gltfModel);
-		void loadTextures(tinygltf::Model& gltfModel, Device* device, VkQueue transferQueue);
+		void loadTextures(tinygltf::Model& gltfModel);
 		VkSamplerAddressMode getVkWrapMode(int32_t wrapMode);
 		VkFilter getVkFilterMode(int32_t filterMode);
 		void loadTextureSamplers(tinygltf::Model& gltfModel);

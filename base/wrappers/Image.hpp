@@ -1,7 +1,7 @@
 /*
  * Vulkan image abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */ 
@@ -15,10 +15,10 @@
 #include "Device.hpp"
 #include "DeviceResource.h"
 #include "CommandBuffer.hpp"
+#include "VulkanContext.h"
 
 struct ImageCreateInfo {
 	std::string name{ "" };
-	Device& device;
 	VkImageType type;
 	VkFormat format;
 	VkExtent3D extent;
@@ -48,7 +48,7 @@ public:
 
 	VkImage handle{ VK_NULL_HANDLE };
 	
-	Image(ImageCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
+	Image(ImageCreateInfo createInfo) : DeviceResource(createInfo.name) {
 		VkImageCreateInfo CI{};
 		CI.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		CI.imageType = createInfo.type;
@@ -60,14 +60,14 @@ public:
 		CI.tiling = createInfo.tiling;
 		CI.usage = createInfo.usage;
 		CI.sharingMode = createInfo.sharingMode;
-		VK_CHECK_RESULT(vkCreateImage(device, &CI, nullptr, &handle));
+		VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &CI, nullptr, &handle));
 		VkMemoryRequirements memReqs;
-		vkGetImageMemoryRequirements(device, handle, &memReqs);
+		vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, handle, &memReqs);
 		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
 		memAlloc.allocationSize = memReqs.size;
-		memAlloc.memoryTypeIndex = device.getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &memory));
-		VK_CHECK_RESULT(vkBindImageMemory(device, handle, memory, 0));
+		memAlloc.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAlloc, nullptr, &memory));
+		VK_CHECK_RESULT(vkBindImageMemory(VulkanContext::device->logicalDevice, handle, memory, 0));
 		// Keep some values for tracking and making dependent resource creation easier (e.g. views)
 		type = createInfo.type;
 		format = createInfo.format;
@@ -81,10 +81,10 @@ public:
 
 	~Image() {
 		if (handle != VK_NULL_HANDLE) {
-			vkDestroyImage(device, handle, nullptr);
+			vkDestroyImage(VulkanContext::device->logicalDevice, handle, nullptr);
 		}
 		if (memory != VK_NULL_HANDLE) {
-			vkFreeMemory(device, memory, nullptr);
+			vkFreeMemory(VulkanContext::device->logicalDevice, memory, nullptr);
 		}
 	}
 

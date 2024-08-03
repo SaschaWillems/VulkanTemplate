@@ -1,7 +1,7 @@
 /*
  * Vulkan image view abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -14,10 +14,10 @@
 #include "VulkanTools.h"
 #include "Device.hpp"
 #include "Image.hpp"
+#include "VulkanContext.h"
 
 class ImageView {
 private:
-	Device* device = nullptr;
 	Image* image = nullptr;
 	VkImageViewType type;
 	VkFormat format;
@@ -36,12 +36,7 @@ private:
 public:
 	VkImageView handle;
 
-	ImageView(Device* device) {
-		this->device = device;
-	}
-
 	ImageView(Image* image) {
-		device = &image->device;
 		VkImageViewCreateInfo CI{};
 		CI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		CI.viewType = viewTypeFromImage(image);
@@ -51,11 +46,11 @@ public:
 		CI.subresourceRange.levelCount = image->mipLevels;
 		CI.subresourceRange.layerCount = image->arrayLayers;
 		CI.image = image->handle;
-		VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &CI, nullptr, &handle));
+		VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &CI, nullptr, &handle));
 	}
 
 	~ImageView() {
-		vkDestroyImageView(*device, handle, nullptr);
+		vkDestroyImageView(VulkanContext::device->logicalDevice, handle, nullptr);
 	}
 
 	operator VkImageView() const {

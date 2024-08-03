@@ -9,11 +9,11 @@
 #include <string.h>
 #include "volk.h"
 #include "Device.hpp"
+#include "VulkanContext.h"
 
 class DeviceResource {
 public:
-	Device& device;
 	std::string name{ "" };
-	DeviceResource(Device& device, const std::string name = "");
+	DeviceResource(const std::string name = "");
 	void setDebugName(uint64_t handle, VkObjectType type);
 };

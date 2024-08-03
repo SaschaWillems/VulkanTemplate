@@ -80,22 +80,11 @@ public:
 		camera.rotate(-90.0f, 0.0f);
 		camera.setPosition({ 0.0f, 0.0f, -12.0f });
 
-		VulkanContext::graphicsQueue = queue;
-		VulkanContext::device = vulkanDevice;
-		// We try to get a transfer queue for background uploads
-		if (vulkanDevice->hasDedicatedTransferQueue) {
-			VulkanContext::copyQueue = vulkanDevice->getQueue(QueueType::Transfer);
-		}
-		else {
-			VulkanContext::copyQueue = queue;
-		}
-
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
 			createBaseFrameObjects(frame);
 			frameObjects.resize(getFrameCount());
 			frame.uniformBuffer = new Buffer({
-				.device = *vulkanDevice,
 				.usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				.size = sizeof(ShaderData),
@@ -104,7 +93,6 @@ public:
 
 		descriptorPool = new DescriptorPool({
 			.name = "Test descriptor pool",
-			.device = *vulkanDevice,
 			.maxSets = getFrameCount(),
 			.poolSizes = {
 				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = getFrameCount() },
@@ -112,7 +100,6 @@ public:
 		});
 
 		descriptorSetLayout = new DescriptorSetLayout({
-			.device = *vulkanDevice,
 			.bindings = {
 				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT }
 			}
@@ -120,7 +107,6 @@ public:
 
 		for (FrameObjects& frame : frameObjects) {
 			frame.descriptorSet = new DescriptorSet({
-				.device = *vulkanDevice,
 				.pool = descriptorPool,
 				.layouts = { descriptorSetLayout->handle },
 				.descriptors = {
@@ -140,13 +126,11 @@ public:
 		blendAttachmentState.colorWriteMask = 0xf;
 
 		testPipelineLayout = new PipelineLayout({
-			.device = *vulkanDevice,
 			.layouts = { descriptorSetLayout->handle },
 		});
 
 		testPipeline = new Pipeline({
 			.name = "Fullscreen pass pipeline",
-			.device = *vulkanDevice,
 			.shaders = {
 				getAssetPath() + "shaders/fullscreen.vert.hlsl",
 				getAssetPath() + "shaders/fullscreen.frag.hlsl"
@@ -185,7 +169,6 @@ public:
 			});
 
 		glTFPipelineLayout = new PipelineLayout({
-			.device = *vulkanDevice,
 			.layouts = { descriptorSetLayout->handle },
 			.pushConstantRanges = {
 				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4) }
@@ -193,7 +176,6 @@ public:
 		});
 
 		assetManager->add("crate", new vkglTF::Model({
-			.device = *vulkanDevice,
 			.pipelineLayout = glTFPipelineLayout->handle,
 			.filename = getAssetPath() + "models/crate.gltf",
 			.queue = VulkanContext::graphicsQueue,
@@ -201,7 +183,6 @@ public:
 		}));
 
 		assetManager->add("text", new vkglTF::Model({
-			.device = *vulkanDevice,
 			.pipelineLayout = glTFPipelineLayout->handle,
 			.filename = getAssetPath() + "models/text.gltf",
 			.queue = VulkanContext::graphicsQueue,
@@ -209,7 +190,6 @@ public:
 		}));
 
 		glTFPipeline = new Pipeline({
-			.device = *vulkanDevice,
 			.shaders = {
 				getAssetPath() + "shaders/gltf.vert.hlsl",
 				getAssetPath() + "shaders/gltf.frag.hlsl"

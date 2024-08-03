@@ -1,7 +1,7 @@
 /*
  * Vulkan pipeline abstraction class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -31,7 +31,6 @@ struct PipelineVertexInput {
 // @todo: add name (to all kind of wrapped objects)
 struct PipelineCreateInfo {
 	const std::string name{ "" };
-	Device& device;
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	std::vector<std::string> shaders{};
 	VkPipelineCache cache{ VK_NULL_HANDLE };
@@ -63,7 +62,7 @@ private:
 		// @todo: also support GLSL? Or jut drop it? And what about Android?
 		Dxc* compiler = new Dxc();
 		try {
-			VkShaderModule shaderModule = compiler->compileShader(filename, device);
+			VkShaderModule shaderModule = compiler->compileShader(filename);
 			VkShaderStageFlagBits shaderStage = compiler->getShaderStage(filename);
 			shaderModules.push_back(shaderModule);
 			VkPipelineShaderStageCreateInfo shaderStageCI{};
@@ -139,11 +138,11 @@ private:
 		pipelineCI.pDynamicState = &dynamicState;
 		pipelineCI.pNext = &createInfo.pipelineRenderingInfo; // createInfo.pNext;
 
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, createInfo.cache, 1, &pipelineCI, nullptr, &handle));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(VulkanContext::device->logicalDevice, createInfo.cache, 1, &pipelineCI, nullptr, &handle));
 	
 		// Shader modules can be safely destroyed after pipeline creation
 		for (auto& shaderModule : shaderModules) {
-			vkDestroyShaderModule(device, shaderModule, nullptr);
+			vkDestroyShaderModule(VulkanContext::device->logicalDevice, shaderModule, nullptr);
 		}
 
 		bindPoint = createInfo.bindPoint;
@@ -155,7 +154,7 @@ public:
 	VkPipelineBindPoint bindPoint{ VK_PIPELINE_BIND_POINT_GRAPHICS };
 	bool wantsReload = false;
 
-	Pipeline(PipelineCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
+	Pipeline(PipelineCreateInfo createInfo) : DeviceResource(createInfo.name) {
 		createPipelineObject(createInfo);
 
 		// Store a copy of the createInfo for hot reload		
@@ -167,19 +166,19 @@ public:
 	};
 
 	~Pipeline() {
-		vkDestroyPipeline(device, handle, nullptr);
+		vkDestroyPipeline(VulkanContext::device->logicalDevice, handle, nullptr);
 	}
 
 	void reload() {
 		wantsReload = false;
 		assert(initialCreateInfo);
 		// @todo: move to calling function to avoid multiple wait idles
-		device.waitIdle();
+		VulkanContext::device->waitIdle();
 		// For hot reloads create a temp handle, so if pipeline creation fails the application will continue with the old pipeline
 		VkPipeline oldHandle = handle;
 		try {
 			createPipelineObject(*initialCreateInfo);
-			vkDestroyPipeline(device, oldHandle, nullptr);
+			vkDestroyPipeline(VulkanContext::device->logicalDevice, oldHandle, nullptr);
 			std::cout << "Pipeline recreated\n";
 		} catch (...) {
 			std::cerr << "Could not recreate pipeline, using last version\n";

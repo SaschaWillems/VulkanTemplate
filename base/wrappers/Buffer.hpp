@@ -1,7 +1,7 @@
 /*
  * Vulkan buffer
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -13,11 +13,11 @@
 #include "volk.h"
 #include "DeviceResource.h"
 #include "Device.hpp"
+#include "VulkanContext.h"
 
 struct BufferCreateInfo {
 	const std::string name{ "" };
-	Device& device;
-	// @todo: replace with own enumes and use cases (e.g. like VMA)
+	// @todo: replace with own enums and use cases (e.g. like VMA)
 	VkBufferUsageFlags usageFlags;
 	VkMemoryPropertyFlags memoryPropertyFlags;
 	VkDeviceSize size;
@@ -38,27 +38,27 @@ public:
 	VkDeviceSize alignment = 0;
 	void* mapped = nullptr;
 
-	Buffer(BufferCreateInfo createInfo) : DeviceResource(createInfo.device, createInfo.name) {
+	Buffer(BufferCreateInfo createInfo) : DeviceResource(createInfo.name) {
 		size = createInfo.size;
 
 		VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo(createInfo.usageFlags, createInfo.size);
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateBuffer(createInfo.device, &bufferCreateInfo, nullptr, &buffer));
+		VK_CHECK_RESULT(vkCreateBuffer(VulkanContext::device->logicalDevice, &bufferCreateInfo, nullptr, &buffer));
 
 		// Create the memory backing up the buffer handle
 		VkMemoryRequirements memReqs;
 		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-		vkGetBufferMemoryRequirements(createInfo.device, buffer, &memReqs);
+		vkGetBufferMemoryRequirements(VulkanContext::device->logicalDevice, buffer, &memReqs);
 		memAlloc.allocationSize = memReqs.size;
 		// Find a memory type index that fits the properties of the buffer
-		memAlloc.memoryTypeIndex = device.getMemoryType(memReqs.memoryTypeBits, createInfo.memoryPropertyFlags);
-		VK_CHECK_RESULT(vkAllocateMemory(createInfo.device, &memAlloc, nullptr, &memory));
-		VK_CHECK_RESULT(vkBindBufferMemory(createInfo.device, buffer, memory, 0));
+		memAlloc.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, createInfo.memoryPropertyFlags);
+		VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAlloc, nullptr, &memory));
+		VK_CHECK_RESULT(vkBindBufferMemory(VulkanContext::device->logicalDevice, buffer, memory, 0));
 
 		// If a pointer to the buffer data has been passed, map the buffer and copy over the data from host memory
 		if (createInfo.data != nullptr) {
 			void* mapped;
-			VK_CHECK_RESULT(vkMapMemory(createInfo.device, memory, 0, size, 0, &mapped));
+			VK_CHECK_RESULT(vkMapMemory(VulkanContext::device->logicalDevice, memory, 0, size, 0, &mapped));
 			memcpy(mapped, createInfo.data, createInfo.size);
 			// If host coherency hasn't been requested, do a manual flush to make writes visible
 			if ((createInfo.memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0) {
@@ -68,12 +68,12 @@ public:
 					.offset = 0,
 					.size = createInfo.size
 				};
-				vkFlushMappedMemoryRanges(createInfo.device, 1, &mappedRange);
+				vkFlushMappedMemoryRanges(VulkanContext::device->logicalDevice, 1, &mappedRange);
 			}
-			vkUnmapMemory(createInfo.device, memory);
+			vkUnmapMemory(VulkanContext::device->logicalDevice, memory);
 		}
 		if (createInfo.map) {
-			vkMapMemory(device, memory, 0, createInfo.size, 0, &mapped);
+			vkMapMemory(VulkanContext::device->logicalDevice, memory, 0, createInfo.size, 0, &mapped);
 		}
 		descriptor = {
 			.buffer = buffer,
@@ -86,10 +86,10 @@ public:
 
 	~Buffer() {
 		if (buffer != VK_NULL_HANDLE) {
-			vkDestroyBuffer(device, buffer, nullptr);
+			vkDestroyBuffer(VulkanContext::device->logicalDevice, buffer, nullptr);
 		}
 		if (memory != VK_NULL_HANDLE) {
-			vkFreeMemory(device, memory, nullptr);
+			vkFreeMemory(VulkanContext::device->logicalDevice, memory, nullptr);
 		}
 	}
 
@@ -99,21 +99,21 @@ public:
 
 	VkResult map(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0)
 	{
-		return vkMapMemory(device, memory, offset, size, 0, &mapped);
+		return vkMapMemory(VulkanContext::device->logicalDevice, memory, offset, size, 0, &mapped);
 	}
 
 	void unmap()
 	{
 		if (mapped)
 		{
-			vkUnmapMemory(device, memory);
+			vkUnmapMemory(VulkanContext::device->logicalDevice, memory);
 			mapped = nullptr;
 		}
 	}
 
 	VkResult bind(VkDeviceSize offset = 0)
 	{
-		return vkBindBufferMemory(device, buffer, memory, offset);
+		return vkBindBufferMemory(VulkanContext::device->logicalDevice, buffer, memory, offset);
 	}
 
 	void copyTo(void* data, VkDeviceSize size)
@@ -129,7 +129,7 @@ public:
 		mappedRange.memory = memory;
 		mappedRange.offset = offset;
 		mappedRange.size = size;
-		return vkFlushMappedMemoryRanges(device, 1, &mappedRange);
+		return vkFlushMappedMemoryRanges(VulkanContext::device->logicalDevice, 1, &mappedRange);
 	}
 
 	VkResult invalidate(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0)
@@ -139,18 +139,18 @@ public:
 		mappedRange.memory = memory;
 		mappedRange.offset = offset;
 		mappedRange.size = size;
-		return vkInvalidateMappedMemoryRanges(device, 1, &mappedRange);
+		return vkInvalidateMappedMemoryRanges(VulkanContext::device->logicalDevice, 1, &mappedRange);
 	}
 
 	void destroy()
 	{
 		if (buffer)
 		{
-			vkDestroyBuffer(device, buffer, nullptr);
+			vkDestroyBuffer(VulkanContext::device->logicalDevice, buffer, nullptr);
 		}
 		if (memory)
 		{
-			vkFreeMemory(device, memory, nullptr);
+			vkFreeMemory(VulkanContext::device->logicalDevice, memory, nullptr);
 		}
 	}
 
