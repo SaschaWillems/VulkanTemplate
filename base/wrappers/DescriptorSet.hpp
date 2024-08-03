@@ -19,6 +19,7 @@
 
 struct DescriptorSetCreateInfo {
 	DescriptorPool* pool = nullptr;
+	uint32_t variableDescriptorCount = 0;
 	std::vector<VkDescriptorSetLayout> layouts;
 	std::vector<VkWriteDescriptorSet> descriptors;
 };
@@ -32,6 +33,14 @@ public:
 	DescriptorSet(DescriptorSetCreateInfo createInfo) {
 		descriptors = createInfo.descriptors;
 		VkDescriptorSetAllocateInfo descriptorSetAI = vks::initializers::descriptorSetAllocateInfo(createInfo.pool->handle, createInfo.layouts.data(), static_cast<uint32_t>(createInfo.layouts.size()));
+		VkDescriptorSetVariableDescriptorCountAllocateInfo variableDescriptorCountAI = {};
+		variableDescriptorCountAI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+		if (createInfo.variableDescriptorCount > 0) {
+			// @todo: only for one descriptor right now
+			variableDescriptorCountAI.descriptorSetCount = 1;
+			variableDescriptorCountAI.pDescriptorCounts = &createInfo.variableDescriptorCount;
+			descriptorSetAI.pNext = &variableDescriptorCountAI;
+		}
 		VK_CHECK_RESULT(vkAllocateDescriptorSets(VulkanContext::device->logicalDevice, &descriptorSetAI, &handle));
 		for (auto& descriptor : createInfo.descriptors) {
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

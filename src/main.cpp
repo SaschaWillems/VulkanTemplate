@@ -48,6 +48,9 @@ public:
 		Device::enabledFeatures.fillModeNonSolid = VK_TRUE;
 
 		Device::enabledFeatures11.multiview = VK_TRUE;
+		Device::enabledFeatures12.descriptorIndexing = VK_TRUE;
+		Device::enabledFeatures12.runtimeDescriptorArray = VK_TRUE;
+		Device::enabledFeatures12.descriptorBindingVariableDescriptorCount = VK_TRUE;
 		Device::enabledFeatures13.dynamicRendering = VK_TRUE;
 
 		settings.sampleCount = VK_SAMPLE_COUNT_4_BIT;
