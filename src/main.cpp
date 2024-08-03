@@ -178,14 +178,14 @@ public:
 		assetManager->add("crate", new vkglTF::Model({
 			.pipelineLayout = glTFPipelineLayout->handle,
 			.filename = getAssetPath() + "models/crate.gltf",
-			.queue = VulkanContext::graphicsQueue,
 			.enableHotReload = true
 		}));
 
 		assetManager->add("text", new vkglTF::Model({
 			.pipelineLayout = glTFPipelineLayout->handle,
 			.filename = getAssetPath() + "models/text.gltf",
-			.queue = VulkanContext::graphicsQueue,
+			.enableHotReload = true
+		}));
 			.enableHotReload = true
 		}));
 
@@ -196,7 +196,7 @@ public:
 			},
 			.cache = pipelineCache,
 			.layout = *glTFPipelineLayout,
-			.vertexInput = vkglTF::Model::getPipelineVertexInput(), // @todo: static
+			.vertexInput = vkglTF::vertexInput,
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},

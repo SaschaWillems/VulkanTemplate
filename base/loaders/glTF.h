@@ -29,7 +29,7 @@
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/quaternion.hpp>
 
-// ERROR is already defined in wingdi.h and collides with a define in the Draco headers
+ // ERROR is already defined in wingdi.h and collides with a define in the Draco headers
 #if defined(_WIN32) && defined(ERROR) && defined(TINYGLTF_ENABLE_DRACO) 
 #undef ERROR
 #pragma message ("ERROR constant already defined, undefining")
@@ -49,6 +49,30 @@
 
 namespace vkglTF
 {
+	// @todo: no fixed struct, make it dynamic (buffer doesn't care anyway)
+	struct Vertex {
+		glm::vec3 pos;
+		glm::vec3 normal;
+		glm::vec2 uv0;
+		glm::vec4 joint0;
+		glm::vec4 weight0;
+		glm::vec4 color;
+	};
+
+	const PipelineVertexInput vertexInput = {
+		.bindings = {
+			{ 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
+		},
+		.attributes = {
+			{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos) },
+			{ 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal) },
+			{ 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv0) },
+			{ 4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, joint0) },
+			{ 5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, weight0) },
+			{ 6, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color) },
+		}
+	};
+
 	struct Node;
 
 	struct BoundingBox {
@@ -83,19 +107,19 @@ namespace vkglTF
 		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler);
 	};
 
-	struct Material {		
-		enum AlphaMode{ ALPHAMODE_OPAQUE, ALPHAMODE_MASK, ALPHAMODE_BLEND };
+	struct Material {
+		enum AlphaMode { ALPHAMODE_OPAQUE, ALPHAMODE_MASK, ALPHAMODE_BLEND };
 		AlphaMode alphaMode = ALPHAMODE_OPAQUE;
 		float alphaCutoff = 1.0f;
 		float metallicFactor = 1.0f;
 		float roughnessFactor = 1.0f;
 		glm::vec4 baseColorFactor = glm::vec4(1.0f);
 		glm::vec4 emissiveFactor = glm::vec4(0.0f);
-		vkglTF::Texture *baseColorTexture;
-		vkglTF::Texture *metallicRoughnessTexture;
-		vkglTF::Texture *normalTexture;
-		vkglTF::Texture *occlusionTexture;
-		vkglTF::Texture *emissiveTexture;
+		vkglTF::Texture* baseColorTexture;
+		vkglTF::Texture* metallicRoughnessTexture;
+		vkglTF::Texture* normalTexture;
+		vkglTF::Texture* occlusionTexture;
+		vkglTF::Texture* emissiveTexture;
 		bool doubleSided = false;
 		struct TexCoordSets {
 			uint8_t baseColor = 0;
@@ -106,8 +130,8 @@ namespace vkglTF
 			uint8_t emissive = 0;
 		} texCoordSets;
 		struct Extension {
-			vkglTF::Texture *specularGlossinessTexture;
-			vkglTF::Texture *diffuseTexture;
+			vkglTF::Texture* specularGlossinessTexture;
+			vkglTF::Texture* diffuseTexture;
 			glm::vec4 diffuseFactor = glm::vec4(1.0f);
 			glm::vec3 specularFactor = glm::vec3(0.0f);
 		} extension;
@@ -125,7 +149,7 @@ namespace vkglTF
 		uint32_t firstIndex;
 		uint32_t indexCount;
 		uint32_t vertexCount;
-		Material &material;
+		Material& material;
 		bool hasIndices;
 		BoundingBox bb;
 		Primitive(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, Material& material);
@@ -148,19 +172,19 @@ namespace vkglTF
 
 	struct Skin {
 		std::string name;
-		Node *skeletonRoot = nullptr;
+		Node* skeletonRoot = nullptr;
 		std::vector<glm::mat4> inverseBindMatrices;
 		std::vector<Node*> joints;
 	};
 
 	struct Node {
-		Node *parent;
+		Node* parent;
 		uint32_t index;
 		std::vector<Node*> children;
 		glm::mat4 matrix;
 		std::string name;
-		Mesh *mesh;
-		Skin *skin;
+		Mesh* mesh;
+		Skin* skin;
 		int32_t skinIndex = -1;
 		glm::vec3 translation{};
 		glm::vec3 scale{ 1.0f };
@@ -176,7 +200,7 @@ namespace vkglTF
 	struct AnimationChannel {
 		enum PathType { TRANSLATION, ROTATION, SCALE };
 		PathType path;
-		Node *node;
+		Node* node;
 		uint32_t samplerIndex;
 	};
 
@@ -198,7 +222,6 @@ namespace vkglTF
 	struct ModelCreateInfo {
 		VkPipelineLayout pipelineLayout;
 		const std::string filename;
-		VkQueue queue{ VK_NULL_HANDLE };
 		float scale{ 1.0f };
 		bool enableHotReload{ false };
 	};
@@ -206,18 +229,6 @@ namespace vkglTF
 	class Model {
 	private:
 		VkPipelineLayout pipelineLayout;
-		// @todo: no fixed struct, make it dynamic (buffer doesn't care anyway)
-		struct Vertex {
-			glm::vec3 pos;
-			glm::vec3 normal;
-			glm::vec2 uv0;
-#ifdef GLTF_LOADER_UV1
-			glm::vec2 uv1;
-#endif
-			glm::vec4 joint0;
-			glm::vec4 weight0;
-			glm::vec4 color;
-		};
 		struct LoaderInfo {
 			uint32_t* indexBuffer;
 			Vertex* vertexBuffer;
@@ -271,6 +282,5 @@ namespace vkglTF
 		void updateAnimation(uint32_t index, float time);
 		Node* findNode(Node* parent, uint32_t index);
 		Node* nodeFromIndex(uint32_t index);
-		static PipelineVertexInput getPipelineVertexInput();
 	};
 }

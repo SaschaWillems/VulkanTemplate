@@ -448,9 +448,6 @@ namespace vkglTF
 					int posByteStride;
 					int normByteStride;
 					int uv0ByteStride;
-#ifdef GLTF_LOADER_UV1
-					int uv1ByteStride;
-#endif
 					int color0ByteStride;
 					int jointByteStride;
 					int weightByteStride;
@@ -482,14 +479,6 @@ namespace vkglTF
 						bufferTexCoordSet0 = reinterpret_cast<const float *>(&(model.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
 						uv0ByteStride = uvAccessor.ByteStride(uvView) ? (uvAccessor.ByteStride(uvView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
 					}
-#ifdef GLTF_LOADER_UV1
-					if (primitive.attributes.find("TEXCOORD_1") != primitive.attributes.end()) {
-						const tinygltf::Accessor &uvAccessor = model.accessors[primitive.attributes.find("TEXCOORD_1")->second];
-						const tinygltf::BufferView &uvView = model.bufferViews[uvAccessor.bufferView];
-						bufferTexCoordSet1 = reinterpret_cast<const float *>(&(model.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
-						uv1ByteStride = uvAccessor.ByteStride(uvView) ? (uvAccessor.ByteStride(uvView) / sizeof(float)) : tinygltf::GetNumComponentsInType(TINYGLTF_TYPE_VEC2);
-					}
-#endif
 
 					// Vertex colors
 					if (primitive.attributes.find("COLOR_0") != primitive.attributes.end()) {
@@ -523,9 +512,6 @@ namespace vkglTF
 						vert.pos = glm::vec4(glm::make_vec3(&bufferPos[v * posByteStride]), 1.0f);
 						vert.normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * normByteStride]) : glm::vec3(0.0f)));
 						vert.uv0 = bufferTexCoordSet0 ? glm::make_vec2(&bufferTexCoordSet0[v * uv0ByteStride]) : glm::vec3(0.0f);
-#ifdef GLTF_LOADER_UV1
-						vert.uv1 = bufferTexCoordSet1 ? glm::make_vec2(&bufferTexCoordSet1[v * uv1ByteStride]) : glm::vec3(0.0f);
-#endif
 						vert.color = bufferColorSet0 ? glm::make_vec4(&bufferColorSet0[v * color0ByteStride]) : glm::vec4(1.0f);
 
 						if (hasSkin)
@@ -1077,7 +1063,8 @@ namespace vkglTF
 			vkCmdCopyBuffer(copyCmd, indexStaging->buffer, indices->buffer, 1, &copyRegion);
 		}
 
-		VulkanContext::device->flushCommandBuffer(copyCmd, createInfo.queue, true);
+		// @todo: Transfer queue
+		VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue, true);
 
 		if (indexBufferSize > 0) {
 			delete indexStaging;
@@ -1290,26 +1277,4 @@ namespace vkglTF
 		}
 		return nodeFound;
 	}
-
-	PipelineVertexInput Model::getPipelineVertexInput()
-	{
-		PipelineVertexInput vertexInput{
-			.bindings = {
-				{ 0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX }
-			},
-			.attributes = {
-				{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos) },
-				{ 1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal) },
-				{ 2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv0) },
-#ifdef GLTF_LOADER_UV1
-				{ 3, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv1) },
-#endif
-				{ 4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, joint0) },
-				{ 5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, weight0) },
-				{ 6, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color) },
-			}
-		};
-		return vertexInput;
-	}
-
 }
