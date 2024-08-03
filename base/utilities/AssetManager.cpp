@@ -15,3 +15,13 @@ AssetManager::~AssetManager() {
 void AssetManager::add(const std::string name, vkglTF::Model* model) {
 	models[name] = model;
 }
+
+void AssetManager::add(const std::string name, vks::Texture2D* texture)
+{
+	textures[name] = texture;
+}
+
+void AssetManager::add(const std::string name, vks::TextureCubeMap* cubemap)
+{
+	textures[name] = cubemap;
+}
