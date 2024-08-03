@@ -216,7 +216,7 @@ namespace vks
 			);
 
 			// Change texture image layout to shader read after all mip levels have been copied
-			this->imageLayout = imageLayout;
+			this->imageLayout = createInfo.imageLayout;
 			vks::tools::setImageLayout(
 				copyCmd,
 				image,
@@ -396,7 +396,7 @@ namespace vks
 				bufferCopyRegions.data());
 
 			// Change texture image layout to shader read after all faces have been copied
-			this->imageLayout = imageLayout;
+			this->imageLayout = createInfo.imageLayout;
 			vks::tools::setImageLayout(
 				copyCmd,
 				image,
