@@ -12,6 +12,7 @@ include_directories(external/imgui)
 include_directories(external/tinygltf)
 include_directories(external/volk)
 include_directories(external/dxc)
+include_directories(external/tracy)
 include_directories(base)
 include_directories(base/utilities)
 include_directories(base/wrappers)
@@ -47,7 +48,7 @@ ENDIF(USE_D2D_WSI)
 ENDIF(WIN32)
 
 # Set preprocessor defines
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNOMINMAX -D_USE_MATH_DEFINES")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNOMINMAX -D_USE_MATH_DEFINES -DTRACY_ENABLE")
 
 # Clang specific stuff
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")

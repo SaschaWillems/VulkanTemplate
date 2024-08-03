@@ -57,6 +57,9 @@
 
 #include "CommandLineParser.hpp"
 
+#include "tracy/Tracy.hpp"
+#include "tracy/TracyVulkan.hpp"
+
 struct VulkanFrameObjects
 {
 	CommandBuffer* commandBuffer;

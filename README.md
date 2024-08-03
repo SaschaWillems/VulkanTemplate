@@ -13,6 +13,7 @@ Includes
 - tinygltf
 - volk
 - dxc
+- tracy
 
 Functionality
 - dynamic rendering

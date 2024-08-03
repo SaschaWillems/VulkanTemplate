@@ -363,6 +363,7 @@ public:
 	}
 
 	void render() {
+		ZoneScopedN("render");
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
