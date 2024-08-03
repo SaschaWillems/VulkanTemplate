@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -7,20 +7,21 @@
 #include "VulkanContext.h"
 #include "FileWatcher.hpp"
 #include <VulkanApplication.h>
+#include "AssetManager.h"
 #include "glTF.h"
 
-// @todo: asset manager
 // @todo: audio (music and sfx)
 
 std::vector<Pipeline*> pipelineList{};
-std::vector<vkglTF::Model*> modelList{};
 
 struct ShaderData {
 	glm::mat4 projection;
 	glm::mat4 view;
 	float time{ 0.0f };
-	glm::vec2 resolution{ 0.0f, 0.0f };
+	float timer{ 0.0f };
 } shaderData;
+
+AssetManager* assetManager{ nullptr };
 
 class Application : public VulkanApplication {
 private:
@@ -50,6 +51,8 @@ public:
 		Device::enabledFeatures13.dynamicRendering = VK_TRUE;
 
 		settings.sampleCount = VK_SAMPLE_COUNT_4_BIT;
+
+		assetManager = new AssetManager();
 	}
 
 	~Application() {
@@ -64,6 +67,7 @@ public:
 		delete glTFPipeline;
 		delete descriptorPool;
 		delete descriptorSetLayout;
+		delete assetManager;
 	}
 
 	void prepare() {
@@ -73,8 +77,8 @@ public:
 		camera.type = Camera::CameraType::lookat;
 		//camera.type = Camera::CameraType::firstperson;
 		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, 1024.0f);
-		//camera.rotate(45.0f, 45.0f);
-		camera.setPosition({ 0.0f, 0.0f, -8.0f });
+		camera.rotate(-90.0f, 0.0f);
+		camera.setPosition({ 0.0f, 0.0f, -12.0f });
 
 		VulkanContext::graphicsQueue = queue;
 		VulkanContext::device = vulkanDevice;
@@ -188,13 +192,21 @@ public:
 			}
 		});
 
-		vkglTF::Model* model = new vkglTF::Model({
+		assetManager->add("crate", new vkglTF::Model({
 			.device = *vulkanDevice,
 			.pipelineLayout = glTFPipelineLayout->handle,
-			.filename = getAssetPath() + "models/test.gltf",
+			.filename = getAssetPath() + "models/crate.gltf",
 			.queue = VulkanContext::graphicsQueue,
 			.enableHotReload = true
-		});
+		}));
+
+		assetManager->add("text", new vkglTF::Model({
+			.device = *vulkanDevice,
+			.pipelineLayout = glTFPipelineLayout->handle,
+			.filename = getAssetPath() + "models/text.gltf",
+			.queue = VulkanContext::graphicsQueue,
+			.enableHotReload = true
+		}));
 
 		glTFPipeline = new Pipeline({
 			.device = *vulkanDevice,
@@ -239,14 +251,13 @@ public:
 
 		pipelineList.push_back(testPipeline);
 		pipelineList.push_back(glTFPipeline);
-		modelList.push_back(model);
 
 		fileWatcher = new FileWatcher();
 		for (auto& pipeline : pipelineList) {
 			fileWatcher->addPipeline(pipeline);
 		}
-		for (auto& model : modelList) {
-			fileWatcher->addFile(model->initialCreateInfo->filename, model);
+		for (auto& it : assetManager->models) {
+			fileWatcher->addFile(it.second->initialCreateInfo->filename, it.second);
 		}
 		fileWatcher->onFileChanged = [=](const std::string filename, const std::vector<void*> userdata) {
 			this->onFileChanged(filename, userdata);
@@ -339,8 +350,8 @@ public:
 
 		// @todo
 		cb->bindPipeline(glTFPipeline);
-		for (auto& model : modelList) {
-			model->draw(cb->handle);
+		for (auto& it : assetManager->models) {
+			it.second->draw(cb->handle);
 		}
 
 		if (overlay->visible) {
@@ -364,11 +375,12 @@ public:
 
 	void render() {
 		ZoneScopedN("render");
+
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
 		shaderData.time = time;
-		shaderData.resolution = glm::vec2(width, height);
+		shaderData.timer = timer;
 		shaderData.projection = camera.matrices.perspective;
 		shaderData.view = camera.matrices.view;
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
@@ -382,20 +394,12 @@ public:
 		}
 
 		// @todo: work in progress
-		std::vector<vkglTF::Model*> addModeList{};
-		for (auto& model : modelList) {
-			if (model->wantsReload) {
-				vkglTF::Model* newModel = new vkglTF::Model(*model->initialCreateInfo);
-				addModeList.push_back(newModel);
+		for (auto& it : assetManager->models) {
+			if (it.second->wantsReload) {
+				vkglTF::Model* newModel = new vkglTF::Model(*it.second->initialCreateInfo);
 				// @todo: check if this works
-				delete model;
-				model = newModel;
-			}
-		}
-		if (!addModeList.empty()) {
-			modelList.clear();
-			for (auto& model : addModeList) {
-				modelList.push_back(model);
+				delete it.second;
+				it.second = newModel;
 			}
 		}
 
@@ -403,6 +407,7 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
+		overlay.text("Time: %f", time);
 		overlay.text("Timer: %f", timer);
 	}
 
@@ -412,8 +417,11 @@ public:
 			if (std::find(pipelineList.begin(), pipelineList.end(), owner) != pipelineList.end()) {
 				static_cast<Pipeline*>(owner)->wantsReload = true;
 			}
-			if (std::find(modelList.begin(), modelList.end(), owner) != modelList.end()) {
-				static_cast<vkglTF::Model*>(owner)->wantsReload = true;
+			// @todo
+			for (auto& it : assetManager->models) {
+				if (it.second == owner) {
+					static_cast<vkglTF::Model*>(owner)->wantsReload = true;
+				}
 			}
 		}
 	}
