@@ -192,6 +192,29 @@ public:
 			.enableHotReload = true
 		}));
 
+		// Use one large descriptor set for all imgages (aka "bindless")
+		std::vector<VkDescriptorImageInfo> textureDescriptors{};
+		for (auto i = 0; i < ApplicationContext::assetManager->textures.size(); i++) {
+			VkDescriptorImageInfo imageInfo{};
+			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfo.sampler = ApplicationContext::assetManager->textures[i]->sampler;
+			imageInfo.imageView = ApplicationContext::assetManager->textures[i]->view;
+			textureDescriptors.push_back(imageInfo);
+		};
+		descriptorSetLayoutTextures = new DescriptorSetLayout({
+			.descriptorIndexing = true,
+			.bindings = {
+				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = static_cast<uint32_t>(textureDescriptors.size()), .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT}
+			}
+		});
+
+		glTFPipelineLayout = new PipelineLayout({
+			.layouts = { descriptorSetLayout->handle, descriptorSetLayoutTextures->handle },
+			.pushConstantRanges = {
+				// @todo
+				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(vkglTF::PushConstBlock) }
+			}
+		});
 		glTFPipeline = new Pipeline({
 			.shaders = {
 				getAssetPath() + "shaders/gltf.vert.hlsl",
@@ -231,6 +254,14 @@ public:
 			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
 			.enableHotReload = true
 			});
+		descriptorSetTextures = new DescriptorSet({
+			.pool = descriptorPool,
+			.variableDescriptorCount = static_cast<uint32_t>(textureDescriptors.size()),
+			.layouts = { descriptorSetLayoutTextures->handle },
+			.descriptors = {
+				{.dstBinding = 0, .descriptorCount = static_cast<uint32_t>(textureDescriptors.size()), .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = textureDescriptors.data()}
+			}
+		});
 
 		pipelineList.push_back(testPipeline);
 		pipelineList.push_back(glTFPipeline);

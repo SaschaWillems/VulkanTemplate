@@ -34,12 +34,18 @@ VSOutput main(VSInput input)
 {
 	VSOutput output = (VSOutput)0;
 	float3 pos = input.pos;
-	pos *= 1.0 + abs(sin(ubo.time)) * 0.25;
+    float3 npos = normalize(pos);
+    pos.z = -pos.z;
+    float s = (pos.x + 1.0) / 2.0;
+    pos.z *= 1.0 + abs(sin(ubo.time - s));// * 0.25;
+    //pos.x *= 0.25 + abs(sin(ubo.time - s)); Cool pseudo effect
 	output.localpos = pos;
+	output.localpos = input.pos;
 	float4x4 modelView = mul(ubo.view, primitive.model);
-	output.pos = mul(ubo.projection, mul(modelView, float4(pos, 1.0)));
+	output.pos = mul(ubo.projection, mul(modelView, float4(input.pos, 1.0)));
     output.uv = input.uv;
 	output.normal = input.normal;
 	output.color = input.color;
+    output.color.rgb = normalize(pos);
 	return output;
 }
