@@ -11,6 +11,20 @@
 #include "glTF.h"
 
 // @todo: audio (music and sfx)
+#ifdef TRACY_ENABLE
+void* operator new(size_t count)
+{
+	auto ptr = malloc(count);
+	TracyAlloc(ptr, count);
+	return ptr;
+}
+
+void operator delete(void* ptr) noexcept
+{
+	TracyFree(ptr);
+	free(ptr);
+}
+#endif
 
 std::vector<Pipeline*> pipelineList{};
 
@@ -284,6 +298,8 @@ public:
 
 	void recordCommandBuffer(FrameObjects& frame)
 	{
+		ZoneScopedN("Command buffer recording");
+
 		CommandBuffer* commandBuffer = frame.commandBuffer;
 
 		const bool multiSampling = (settings.sampleCount > VK_SAMPLE_COUNT_1_BIT);
