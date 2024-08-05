@@ -1,7 +1,7 @@
 /**
  * Vulkan glTF model and texture loading class based on tinyglTF (https://github.com/syoyo/tinygltf)
  *
- * Copyright (C) 2018-2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2018-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -13,6 +13,7 @@
 #define STBI_MSC_SECURE_CRT
 
 #include "glTF.h"
+#include "ApplicationContext.h"
 
 namespace vkglTF
 {
@@ -51,19 +52,13 @@ namespace vkglTF
 	}
 
 	// Texture
-	void Texture::updateDescriptor()
-	{
-		descriptor.sampler = sampler;
-		descriptor.imageView = view;
-		descriptor.imageLayout = imageLayout;
-	}
-
 	void Texture::destroy()
-	{
-		vkDestroyImageView(VulkanContext::device->logicalDevice, view, nullptr);
-		vkDestroyImage(VulkanContext::device->logicalDevice, image, nullptr);
-		vkFreeMemory(VulkanContext::device->logicalDevice, deviceMemory, nullptr);
-		vkDestroySampler(VulkanContext::device->logicalDevice, sampler, nullptr);
+	{	
+		// @todo: textures are managed by the asset manager
+		//vkDestroyImageView(VulkanContext::device->logicalDevice, view, nullptr);
+		//vkDestroyImage(VulkanContext::device->logicalDevice, image, nullptr);
+		//vkFreeMemory(VulkanContext::device->logicalDevice, deviceMemory, nullptr);
+		//vkDestroySampler(VulkanContext::device->logicalDevice, sampler, nullptr);
 	}
 
 	void Texture::fromglTfImage(tinygltf::Image &gltfimage, TextureSampler textureSampler)
@@ -98,6 +93,19 @@ namespace vkglTF
 
 		width = gltfimage.width;
 		height = gltfimage.height;
+		mipLevels = 1;
+
+		assetIndex = ApplicationContext::assetManager->add(gltfimage.name, new vks::Texture2D({
+			.buffer = buffer,
+			.bufferSize = bufferSize,
+			.texWidth = width,
+			.texHeight = height,
+			.format = format,
+			// @todo
+			//.createSampler = false
+		}));
+
+		/*
 		mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
 
 		vkGetPhysicalDeviceFormatProperties(VulkanContext::device->physicalDevice, format, &formatProperties);
@@ -267,6 +275,18 @@ namespace vkglTF
 
 		VulkanContext::device->flushCommandBuffer(blitCmd, copyQueue, true);
 
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.image = image;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format = format;
+		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		viewInfo.subresourceRange.layerCount = 1;
+		viewInfo.subresourceRange.levelCount = mipLevels;
+		VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewInfo, nullptr, &view));
+		*/
+
 		VkSamplerCreateInfo samplerInfo{};
 		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerInfo.magFilter = textureSampler.magFilter;
@@ -283,17 +303,6 @@ namespace vkglTF
 		samplerInfo.maxAnisotropy = 8.0f;
 		samplerInfo.anisotropyEnable = VK_TRUE;
 		VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &samplerInfo, nullptr, &sampler));
-
-		VkImageViewCreateInfo viewInfo{};
-		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInfo.image = image;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format = format;
-		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
-		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		viewInfo.subresourceRange.layerCount = 1;
-		viewInfo.subresourceRange.levelCount = mipLevels;
-		VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewInfo, nullptr, &view));
 
 		descriptor.sampler = sampler;
 		descriptor.imageView = view;
@@ -944,7 +953,7 @@ namespace vkglTF
 		}
 	}
 
-	Model::Model(ModelCreateInfo createInfo) : pipelineLayout(createInfo.pipelineLayout) {
+	Model::Model(ModelCreateInfo createInfo) {
 		tinygltf::Model gltfModel;
 		tinygltf::TinyGLTF gltfContext;
 
@@ -1087,7 +1096,7 @@ namespace vkglTF
 		freeResources();
 	}
 
-	void Model::drawNode(Node *node, VkCommandBuffer commandBuffer)
+	void Model::drawNode(Node *node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, bool skipMaterials)
 	{
 		if (node->mesh) {
 			for (Primitive *primitive : node->mesh->primitives) {
@@ -1098,23 +1107,32 @@ namespace vkglTF
 					nodeMatrix = currentParent->matrix * nodeMatrix;
 					currentParent = currentParent->parent;
 				}
-				// Pass the final matrix to the vertex shader using push constants
-				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &nodeMatrix);
+				
+				// Material setup can explicitly be skipped if e.g. used for non standard glTF display
+				if (!skipMaterials) {
+					PushConstBlock pushConstBlock{};
+					pushConstBlock.mat = nodeMatrix;
+					// @todo: different textures (base, normal, etc.)
+					pushConstBlock.textureIndex = primitive->material.baseColorTexture->assetIndex;
+					// Pass the final matrix to the vertex shader using push constants
+					vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstBlock), &pushConstBlock);
+				}
+				// @todo: images via push constants
 				vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
 			}
 		}
 		for (auto& child : node->children) {
-			drawNode(child, commandBuffer);
+			drawNode(child, commandBuffer, pipelineLayout);
 		}
 	}
 
-	void Model::draw(VkCommandBuffer commandBuffer)
+	void Model::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, bool skipMaterials)
 	{
 		const VkDeviceSize offsets[1] = { 0 };
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices->buffer, offsets);
 		vkCmdBindIndexBuffer(commandBuffer, indices->buffer, 0, VK_INDEX_TYPE_UINT32);
 		for (auto& node : nodes) {
-			drawNode(node, commandBuffer);
+			drawNode(node, commandBuffer, pipelineLayout, skipMaterials);
 		}
 	}
 

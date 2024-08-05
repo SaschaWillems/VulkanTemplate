@@ -42,6 +42,23 @@ namespace vks
 		VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	};
 
+	struct TextureFromBufferCreateInfo {
+		void* buffer;
+		VkDeviceSize bufferSize;
+		uint32_t texWidth;
+		uint32_t texHeight;
+		VkFormat format;
+		VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT;
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		bool createSampler = true;
+		VkFilter magFilter = VK_FILTER_LINEAR;
+		VkFilter minFilter = VK_FILTER_LINEAR;
+		VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		VkSamplerAddressMode addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		VkSamplerAddressMode addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	};
+
 	/** @brief Vulkan texture base class */
 	class Texture {
 	public:
@@ -240,6 +257,160 @@ namespace vks
 			viewCreateInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
 			viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 			viewCreateInfo.subresourceRange.levelCount = mipLevels;
+			viewCreateInfo.image = image;
+			VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewCreateInfo, nullptr, &view));
+
+			if (createInfo.createSampler) {
+				VkSamplerCreateInfo samplerCreateInfo = vks::initializers::samplerCreateInfo();
+				samplerCreateInfo.magFilter = createInfo.magFilter;
+				samplerCreateInfo.minFilter = createInfo.minFilter;
+				samplerCreateInfo.mipmapMode = createInfo.mipmapMode;
+				samplerCreateInfo.addressModeU = createInfo.addressModeU;
+				samplerCreateInfo.addressModeV = createInfo.addressModeV;
+				samplerCreateInfo.addressModeW = createInfo.addressModeV;
+				samplerCreateInfo.mipLodBias = 0.0f;
+				samplerCreateInfo.compareOp = VK_COMPARE_OP_NEVER;
+				samplerCreateInfo.minLod = 0.0f;
+				samplerCreateInfo.maxLod = (float)mipLevels;
+				samplerCreateInfo.maxAnisotropy = VulkanContext::device->properties.limits.maxSamplerAnisotropy;
+				samplerCreateInfo.anisotropyEnable = VulkanContext::device->enabledFeatures.samplerAnisotropy;
+				VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+			}
+
+			// Update descriptor image info member that can be used for setting up descriptor sets
+			updateDescriptor();
+		}
+
+		Texture2D(TextureFromBufferCreateInfo createInfo)
+		{
+			assert(createInfo.buffer);
+
+			width = createInfo.texWidth;
+			height = createInfo.texHeight;
+			mipLevels = 1;
+
+			VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
+			VkMemoryRequirements memReqs;
+
+			// Use a separate command buffer for texture loading
+			VkCommandBuffer copyCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+			// Create a host-visible staging buffer that contains the raw image data
+			VkBuffer stagingBuffer;
+			VkDeviceMemory stagingMemory;
+
+			VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo();
+			bufferCreateInfo.size = createInfo.bufferSize;
+			// This buffer is used as a transfer source for the buffer copy
+			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+			VK_CHECK_RESULT(vkCreateBuffer(VulkanContext::device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+
+			// Get memory requirements for the staging buffer (alignment, memory type bits)
+			vkGetBufferMemoryRequirements(VulkanContext::device->logicalDevice, stagingBuffer, &memReqs);
+
+			memAllocInfo.allocationSize = memReqs.size;
+			// Get memory type index for a host visible buffer
+			memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+			VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+			VK_CHECK_RESULT(vkBindBufferMemory(VulkanContext::device->logicalDevice, stagingBuffer, stagingMemory, 0));
+
+			// Copy texture data into staging buffer
+			uint8_t* data;
+			VK_CHECK_RESULT(vkMapMemory(VulkanContext::device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
+			memcpy(data, createInfo.buffer, createInfo.bufferSize);
+			vkUnmapMemory(VulkanContext::device->logicalDevice, stagingMemory);
+
+			VkBufferImageCopy bufferCopyRegion = {};
+			bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			bufferCopyRegion.imageSubresource.mipLevel = 0;
+			bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+			bufferCopyRegion.imageSubresource.layerCount = 1;
+			bufferCopyRegion.imageExtent.width = width;
+			bufferCopyRegion.imageExtent.height = height;
+			bufferCopyRegion.imageExtent.depth = 1;
+			bufferCopyRegion.bufferOffset = 0;
+
+			// Create optimal tiled target image
+			VkImageCreateInfo imageCreateInfo = vks::initializers::imageCreateInfo();
+			imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+			imageCreateInfo.format = createInfo.format;
+			imageCreateInfo.mipLevels = mipLevels;
+			imageCreateInfo.arrayLayers = 1;
+			imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+			imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+			imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			imageCreateInfo.extent = { width, height, 1 };
+			imageCreateInfo.usage = createInfo.imageUsageFlags;
+			// Ensure that the TRANSFER_DST bit is set for staging
+			if (!(imageCreateInfo.usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT))
+			{
+				imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			}
+			VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &imageCreateInfo, nullptr, &image));
+
+			vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, image, &memReqs);
+
+			memAllocInfo.allocationSize = memReqs.size;
+
+			memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+			VK_CHECK_RESULT(vkBindImageMemory(VulkanContext::device->logicalDevice, image, deviceMemory, 0));
+
+			VkImageSubresourceRange subresourceRange = {};
+			subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			subresourceRange.baseMipLevel = 0;
+			subresourceRange.levelCount = mipLevels;
+			subresourceRange.layerCount = 1;
+
+			// Image barrier for optimal image (target)
+			// Optimal image will be used as destination for the copy
+			vks::tools::setImageLayout(
+				copyCmd,
+				image,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				subresourceRange);
+
+			// Copy mip levels from staging buffer
+			vkCmdCopyBufferToImage(
+				copyCmd,
+				stagingBuffer,
+				image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&bufferCopyRegion
+			);
+
+			// Change texture image layout to shader read after all mip levels have been copied
+			this->imageLayout = createInfo.imageLayout;
+			vks::tools::setImageLayout(
+				copyCmd,
+				image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				imageLayout,
+				subresourceRange);
+
+			// @todo: create full mip chain
+
+			// @todo: transfer queu
+			VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue);
+
+			// Clean up staging resources
+			vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
+			vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
+
+			// Create image view
+			VkImageViewCreateInfo viewCreateInfo = {};
+			viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			viewCreateInfo.pNext = NULL;
+			viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			viewCreateInfo.format = createInfo.format;
+			viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+			viewCreateInfo.subresourceRange.levelCount = 1;
 			viewCreateInfo.image = image;
 			VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewCreateInfo, nullptr, &view));
 
