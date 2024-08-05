@@ -70,6 +70,7 @@ public:
 		settings.sampleCount = VK_SAMPLE_COUNT_4_BIT;
 
 		assetManager = new AssetManager();
+		dxcCompiler = new Dxc();
 	}
 
 	~Application() {

@@ -58,12 +58,11 @@ private:
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
 
 	void addShader(const std::string filename) {
-
 		// @todo: also support GLSL? Or jut drop it? And what about Android?
-		Dxc* compiler = new Dxc();
 		try {
-			VkShaderModule shaderModule = compiler->compileShader(filename);
-			VkShaderStageFlagBits shaderStage = compiler->getShaderStage(filename);
+			assert(dxcCompiler);
+			VkShaderModule shaderModule = dxcCompiler->compileShader(filename);
+			VkShaderStageFlagBits shaderStage = dxcCompiler->getShaderStage(filename);
 			shaderModules.push_back(shaderModule);
 			VkPipelineShaderStageCreateInfo shaderStageCI{};
 			shaderStageCI.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
