@@ -287,7 +287,7 @@ namespace vks
 
 			width = createInfo.texWidth;
 			height = createInfo.texHeight;
-			mipLevels = 1;
+			mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
 
 			VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
 			VkMemoryRequirements memReqs;
@@ -344,12 +344,7 @@ namespace vks
 			imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 			imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			imageCreateInfo.extent = { width, height, 1 };
-			imageCreateInfo.usage = createInfo.imageUsageFlags;
-			// Ensure that the TRANSFER_DST bit is set for staging
-			if (!(imageCreateInfo.usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT))
-			{
-				imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-			}
+			imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 			VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &imageCreateInfo, nullptr, &image));
 
 			vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, image, &memReqs);
@@ -385,23 +380,108 @@ namespace vks
 				&bufferCopyRegion
 			);
 
+			{
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				imageMemoryBarrier.image = image;
+				imageMemoryBarrier.subresourceRange = subresourceRange;
+				vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+			}
+
+			// @todo
+			VkQueue copyQueue = VulkanContext::graphicsQueue;
+
+			VulkanContext::device->flushCommandBuffer(copyCmd, copyQueue, true);
+
+			vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
+			vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
+
+			// Generate the mip chain
+			VkCommandBuffer blitCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+			for (uint32_t i = 1; i < mipLevels; i++) {
+				VkImageBlit imageBlit{};
+
+				imageBlit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				imageBlit.srcSubresource.layerCount = 1;
+				imageBlit.srcSubresource.mipLevel = i - 1;
+				imageBlit.srcOffsets[1].x = int32_t(width >> (i - 1));
+				imageBlit.srcOffsets[1].y = int32_t(height >> (i - 1));
+				imageBlit.srcOffsets[1].z = 1;
+
+				imageBlit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				imageBlit.dstSubresource.layerCount = 1;
+				imageBlit.dstSubresource.mipLevel = i;
+				imageBlit.dstOffsets[1].x = int32_t(width >> i);
+				imageBlit.dstOffsets[1].y = int32_t(height >> i);
+				imageBlit.dstOffsets[1].z = 1;
+
+				VkImageSubresourceRange mipSubRange = {};
+				mipSubRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				mipSubRange.baseMipLevel = i;
+				mipSubRange.levelCount = 1;
+				mipSubRange.layerCount = 1;
+
+				{
+					VkImageMemoryBarrier imageMemoryBarrier{};
+					imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+					imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+					imageMemoryBarrier.srcAccessMask = 0;
+					imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+					imageMemoryBarrier.image = image;
+					imageMemoryBarrier.subresourceRange = mipSubRange;
+					vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				}
+
+				vkCmdBlitImage(blitCmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageBlit, VK_FILTER_LINEAR);
+
+				{
+					VkImageMemoryBarrier imageMemoryBarrier{};
+					imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+					imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+					imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+					imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+					imageMemoryBarrier.image = image;
+					imageMemoryBarrier.subresourceRange = mipSubRange;
+					vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				}
+			}
+
+			subresourceRange.levelCount = mipLevels;
+			imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			{
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				imageMemoryBarrier.image = image;
+				imageMemoryBarrier.subresourceRange = subresourceRange;
+				vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+			}
+
+			VulkanContext::device->flushCommandBuffer(blitCmd, copyQueue, true);
+
 			// Change texture image layout to shader read after all mip levels have been copied
-			this->imageLayout = createInfo.imageLayout;
-			vks::tools::setImageLayout(
-				copyCmd,
-				image,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				imageLayout,
-				subresourceRange);
+			//this->imageLayout = createInfo.imageLayout;
+			//vks::tools::setImageLayout(
+			//	copyCmd,
+			//	image,
+			//	VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			//	imageLayout,
+			//	subresourceRange);
 
 			// @todo: create full mip chain
 
 			// @todo: transfer queu
-			VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue);
-
-			// Clean up staging resources
-			vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
-			vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
+			//VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue);
 
 			// Create image view
 			VkImageViewCreateInfo viewCreateInfo = {};
@@ -410,7 +490,7 @@ namespace vks
 			viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			viewCreateInfo.format = createInfo.format;
 			viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-			viewCreateInfo.subresourceRange.levelCount = 1;
+			viewCreateInfo.subresourceRange.levelCount = mipLevels;
 			viewCreateInfo.image = image;
 			VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewCreateInfo, nullptr, &view));
 

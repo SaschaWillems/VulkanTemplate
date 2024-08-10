@@ -110,7 +110,7 @@ namespace vkglTF
 		VkDescriptorImageInfo descriptor;
 		VkSampler sampler;
 		void destroy();
-		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler);
+		void fromglTfImage(tinygltf::Image& gltfimage, std::string filePath, TextureSampler textureSampler);
 	};
 
 	struct Material {
@@ -276,12 +276,13 @@ namespace vkglTF
 		} dimensions;
 
 		bool wantsReload = false;
+		std::string filePath = "";
 
 		Model(ModelCreateInfo createInfo);
 		~Model();
 
-		void drawNode(Node* node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, bool skipMaterials = false);
-		void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, bool skipMaterials = false);
+		void drawNode(Node* node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false);
+		void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false);
 		void getSceneDimensions();
 		void updateAnimation(uint32_t index, float time);
 		Node* findNode(Node* parent, uint32_t index);

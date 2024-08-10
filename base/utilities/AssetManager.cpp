@@ -12,16 +12,20 @@ AssetManager::~AssetManager() {
 	}
 }
 
-void AssetManager::add(const std::string name, vkglTF::Model* model) {
+vkglTF::Model* AssetManager::add(const std::string name, vkglTF::Model* model) {
 	models[name] = model;
+	return model;
 }
 
-void AssetManager::add(const std::string name, vks::Texture2D* texture)
+uint32_t AssetManager::add(const std::string name, vks::Texture2D* texture)
 {
-	textures[name] = texture;
+	textures.push_back(texture);
+	return static_cast<uint32_t>(textures.size() - 1);
 }
 
-void AssetManager::add(const std::string name, vks::TextureCubeMap* cubemap)
+uint32_t AssetManager::add(const std::string name, vks::TextureCubeMap* cubemap)
 {
-	textures[name] = cubemap;
+	textures.push_back(cubemap);
+	return static_cast<uint32_t>(textures.size() - 1);
+}
 }
