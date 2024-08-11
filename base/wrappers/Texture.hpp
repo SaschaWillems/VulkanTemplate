@@ -42,6 +42,23 @@ namespace vks
 		VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	};
 
+	struct TextureFromBufferCreateInfo {
+		void* buffer;
+		VkDeviceSize bufferSize;
+		uint32_t texWidth;
+		uint32_t texHeight;
+		VkFormat format;
+		VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT;
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		bool createSampler = true;
+		VkFilter magFilter = VK_FILTER_LINEAR;
+		VkFilter minFilter = VK_FILTER_LINEAR;
+		VkSamplerMipmapMode mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		VkSamplerAddressMode addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		VkSamplerAddressMode addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		VkSamplerAddressMode addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	};
+
 	/** @brief Vulkan texture base class */
 	class Texture {
 	public:
@@ -238,6 +255,240 @@ namespace vks
 			viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			viewCreateInfo.format = createInfo.format;
 			viewCreateInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
+			viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+			viewCreateInfo.subresourceRange.levelCount = mipLevels;
+			viewCreateInfo.image = image;
+			VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewCreateInfo, nullptr, &view));
+
+			if (createInfo.createSampler) {
+				VkSamplerCreateInfo samplerCreateInfo = vks::initializers::samplerCreateInfo();
+				samplerCreateInfo.magFilter = createInfo.magFilter;
+				samplerCreateInfo.minFilter = createInfo.minFilter;
+				samplerCreateInfo.mipmapMode = createInfo.mipmapMode;
+				samplerCreateInfo.addressModeU = createInfo.addressModeU;
+				samplerCreateInfo.addressModeV = createInfo.addressModeV;
+				samplerCreateInfo.addressModeW = createInfo.addressModeV;
+				samplerCreateInfo.mipLodBias = 0.0f;
+				samplerCreateInfo.compareOp = VK_COMPARE_OP_NEVER;
+				samplerCreateInfo.minLod = 0.0f;
+				samplerCreateInfo.maxLod = (float)mipLevels;
+				samplerCreateInfo.maxAnisotropy = VulkanContext::device->properties.limits.maxSamplerAnisotropy;
+				samplerCreateInfo.anisotropyEnable = VulkanContext::device->enabledFeatures.samplerAnisotropy;
+				VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+			}
+
+			// Update descriptor image info member that can be used for setting up descriptor sets
+			updateDescriptor();
+		}
+
+		Texture2D(TextureFromBufferCreateInfo createInfo)
+		{
+			assert(createInfo.buffer);
+
+			width = createInfo.texWidth;
+			height = createInfo.texHeight;
+			mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
+
+			VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
+			VkMemoryRequirements memReqs;
+
+			// Use a separate command buffer for texture loading
+			VkCommandBuffer copyCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+			// Create a host-visible staging buffer that contains the raw image data
+			VkBuffer stagingBuffer;
+			VkDeviceMemory stagingMemory;
+
+			VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo();
+			bufferCreateInfo.size = createInfo.bufferSize;
+			// This buffer is used as a transfer source for the buffer copy
+			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+			VK_CHECK_RESULT(vkCreateBuffer(VulkanContext::device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+
+			// Get memory requirements for the staging buffer (alignment, memory type bits)
+			vkGetBufferMemoryRequirements(VulkanContext::device->logicalDevice, stagingBuffer, &memReqs);
+
+			memAllocInfo.allocationSize = memReqs.size;
+			// Get memory type index for a host visible buffer
+			memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+			VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+			VK_CHECK_RESULT(vkBindBufferMemory(VulkanContext::device->logicalDevice, stagingBuffer, stagingMemory, 0));
+
+			// Copy texture data into staging buffer
+			uint8_t* data;
+			VK_CHECK_RESULT(vkMapMemory(VulkanContext::device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
+			memcpy(data, createInfo.buffer, createInfo.bufferSize);
+			vkUnmapMemory(VulkanContext::device->logicalDevice, stagingMemory);
+
+			VkBufferImageCopy bufferCopyRegion = {};
+			bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			bufferCopyRegion.imageSubresource.mipLevel = 0;
+			bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+			bufferCopyRegion.imageSubresource.layerCount = 1;
+			bufferCopyRegion.imageExtent.width = width;
+			bufferCopyRegion.imageExtent.height = height;
+			bufferCopyRegion.imageExtent.depth = 1;
+			bufferCopyRegion.bufferOffset = 0;
+
+			// Create optimal tiled target image
+			VkImageCreateInfo imageCreateInfo = vks::initializers::imageCreateInfo();
+			imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+			imageCreateInfo.format = createInfo.format;
+			imageCreateInfo.mipLevels = mipLevels;
+			imageCreateInfo.arrayLayers = 1;
+			imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+			imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+			imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			imageCreateInfo.extent = { width, height, 1 };
+			imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+			VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &imageCreateInfo, nullptr, &image));
+
+			vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, image, &memReqs);
+
+			memAllocInfo.allocationSize = memReqs.size;
+
+			memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+			VK_CHECK_RESULT(vkBindImageMemory(VulkanContext::device->logicalDevice, image, deviceMemory, 0));
+
+			VkImageSubresourceRange subresourceRange = {};
+			subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			subresourceRange.baseMipLevel = 0;
+			subresourceRange.levelCount = mipLevels;
+			subresourceRange.layerCount = 1;
+
+			// Image barrier for optimal image (target)
+			// Optimal image will be used as destination for the copy
+			vks::tools::setImageLayout(
+				copyCmd,
+				image,
+				VK_IMAGE_LAYOUT_UNDEFINED,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				subresourceRange);
+
+			// Copy mip levels from staging buffer
+			vkCmdCopyBufferToImage(
+				copyCmd,
+				stagingBuffer,
+				image,
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				1,
+				&bufferCopyRegion
+			);
+
+			{
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				imageMemoryBarrier.image = image;
+				imageMemoryBarrier.subresourceRange = subresourceRange;
+				vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+			}
+
+			// @todo
+			VkQueue copyQueue = VulkanContext::graphicsQueue;
+
+			VulkanContext::device->flushCommandBuffer(copyCmd, copyQueue, true);
+
+			vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
+			vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
+
+			// Generate the mip chain
+			VkCommandBuffer blitCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+			for (uint32_t i = 1; i < mipLevels; i++) {
+				VkImageBlit imageBlit{};
+
+				imageBlit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				imageBlit.srcSubresource.layerCount = 1;
+				imageBlit.srcSubresource.mipLevel = i - 1;
+				imageBlit.srcOffsets[1].x = int32_t(width >> (i - 1));
+				imageBlit.srcOffsets[1].y = int32_t(height >> (i - 1));
+				imageBlit.srcOffsets[1].z = 1;
+
+				imageBlit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				imageBlit.dstSubresource.layerCount = 1;
+				imageBlit.dstSubresource.mipLevel = i;
+				imageBlit.dstOffsets[1].x = int32_t(width >> i);
+				imageBlit.dstOffsets[1].y = int32_t(height >> i);
+				imageBlit.dstOffsets[1].z = 1;
+
+				VkImageSubresourceRange mipSubRange = {};
+				mipSubRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				mipSubRange.baseMipLevel = i;
+				mipSubRange.levelCount = 1;
+				mipSubRange.layerCount = 1;
+
+				{
+					VkImageMemoryBarrier imageMemoryBarrier{};
+					imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+					imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+					imageMemoryBarrier.srcAccessMask = 0;
+					imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+					imageMemoryBarrier.image = image;
+					imageMemoryBarrier.subresourceRange = mipSubRange;
+					vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				}
+
+				vkCmdBlitImage(blitCmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageBlit, VK_FILTER_LINEAR);
+
+				{
+					VkImageMemoryBarrier imageMemoryBarrier{};
+					imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+					imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+					imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+					imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+					imageMemoryBarrier.image = image;
+					imageMemoryBarrier.subresourceRange = mipSubRange;
+					vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				}
+			}
+
+			subresourceRange.levelCount = mipLevels;
+			imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			{
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				imageMemoryBarrier.image = image;
+				imageMemoryBarrier.subresourceRange = subresourceRange;
+				vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+			}
+
+			VulkanContext::device->flushCommandBuffer(blitCmd, copyQueue, true);
+
+			// Change texture image layout to shader read after all mip levels have been copied
+			//this->imageLayout = createInfo.imageLayout;
+			//vks::tools::setImageLayout(
+			//	copyCmd,
+			//	image,
+			//	VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			//	imageLayout,
+			//	subresourceRange);
+
+			// @todo: create full mip chain
+
+			// @todo: transfer queu
+			//VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue);
+
+			// Create image view
+			VkImageViewCreateInfo viewCreateInfo = {};
+			viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			viewCreateInfo.pNext = NULL;
+			viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			viewCreateInfo.format = createInfo.format;
 			viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 			viewCreateInfo.subresourceRange.levelCount = mipLevels;
 			viewCreateInfo.image = image;

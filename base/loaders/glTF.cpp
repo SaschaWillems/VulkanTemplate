@@ -1,7 +1,7 @@
 /**
  * Vulkan glTF model and texture loading class based on tinyglTF (https://github.com/syoyo/tinygltf)
  *
- * Copyright (C) 2018-2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2018-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -13,9 +13,22 @@
 #define STBI_MSC_SECURE_CRT
 
 #include "glTF.h"
+#include "ApplicationContext.h"
 
 namespace vkglTF
 {
+	bool loadImageDataFunc(tinygltf::Image* image, const int imageIndex, std::string* error, std::string* warning, int req_width, int req_height, const unsigned char* bytes, int size, void* userData)
+	{
+		// KTX files will be handled by our own code
+		if (image->uri.find_last_of(".") != std::string::npos) {
+			if (image->uri.substr(image->uri.find_last_of(".") + 1) == "ktx") {
+				return true;
+			}
+		}
+
+		return tinygltf::LoadImageData(image, imageIndex, error, warning, req_width, req_height, bytes, size, userData);
+	}
+
 	// Bounding box
 
 	BoundingBox::BoundingBox() {
@@ -51,221 +64,78 @@ namespace vkglTF
 	}
 
 	// Texture
-	void Texture::updateDescriptor()
-	{
-		descriptor.sampler = sampler;
-		descriptor.imageView = view;
-		descriptor.imageLayout = imageLayout;
-	}
-
 	void Texture::destroy()
-	{
-		vkDestroyImageView(VulkanContext::device->logicalDevice, view, nullptr);
-		vkDestroyImage(VulkanContext::device->logicalDevice, image, nullptr);
-		vkFreeMemory(VulkanContext::device->logicalDevice, deviceMemory, nullptr);
-		vkDestroySampler(VulkanContext::device->logicalDevice, sampler, nullptr);
+	{	
+		// @todo: textures are managed by the asset manager
+		//vkDestroyImageView(VulkanContext::device->logicalDevice, view, nullptr);
+		//vkDestroyImage(VulkanContext::device->logicalDevice, image, nullptr);
+		//vkFreeMemory(VulkanContext::device->logicalDevice, deviceMemory, nullptr);
+		//vkDestroySampler(VulkanContext::device->logicalDevice, sampler, nullptr);
 	}
 
-	void Texture::fromglTfImage(tinygltf::Image &gltfimage, TextureSampler textureSampler)
+	void Texture::fromglTfImage(tinygltf::Image &gltfimage, std::string filePath, TextureSampler textureSampler)
 	{
-		unsigned char* buffer = nullptr;
-		VkDeviceSize bufferSize = 0;
-		bool deleteBuffer = false;
-		if (gltfimage.component == 3) {
-			// Most devices don't support RGB only on Vulkan so convert if necessary
-			// TODO: Check actual format support and transform only if required
-			bufferSize = gltfimage.width * gltfimage.height * 4;
-			buffer = new unsigned char[bufferSize];
-			unsigned char* rgba = buffer;
-			unsigned char* rgb = &gltfimage.image[0];
-			for (int32_t i = 0; i< gltfimage.width * gltfimage.height; ++i) {
-				for (int32_t j = 0; j < 3; ++j) {
-					rgba[j] = rgb[j];
+		bool isKtx = false;
+		// Image points to an external ktx file
+		if (gltfimage.uri.find_last_of(".") != std::string::npos) {
+			if (gltfimage.uri.substr(gltfimage.uri.find_last_of(".") + 1) == "ktx") {
+				isKtx = true;
+			}
+		}
+
+		if (isKtx) {
+			assetIndex = ApplicationContext::assetManager->add(gltfimage.name, new vks::Texture2D({
+				.filename = filePath + "/" + gltfimage.uri,
+				.format = VK_FORMAT_BC3_UNORM_BLOCK,
+				// @todo
+//				.format = VK_FORMAT_R8G8B8A8_UNORM,
+				//.createSampler = false
+			}));
+			width = ApplicationContext::assetManager->textures[assetIndex]->width;
+			height = ApplicationContext::assetManager->textures[assetIndex]->height;
+			mipLevels = ApplicationContext::assetManager->textures[assetIndex]->mipLevels;
+		} else {
+			unsigned char* buffer = nullptr;
+			VkDeviceSize bufferSize = 0;
+			bool deleteBuffer = false;
+			if (gltfimage.component == 3) {
+				// Most devices don't support RGB only on Vulkan so convert if necessary
+				// TODO: Check actual format support and transform only if required
+				bufferSize = gltfimage.width * gltfimage.height * 4;
+				buffer = new unsigned char[bufferSize];
+				unsigned char* rgba = buffer;
+				unsigned char* rgb = &gltfimage.image[0];
+				for (int32_t i = 0; i < gltfimage.width * gltfimage.height; ++i) {
+					for (int32_t j = 0; j < 3; ++j) {
+						rgba[j] = rgb[j];
+					}
+					rgba += 4;
+					rgb += 3;
 				}
-				rgba += 4;
-				rgb += 3;
+				deleteBuffer = true;
 			}
-			deleteBuffer = true;
-		}
-		else {
-			buffer = &gltfimage.image[0];
-			bufferSize = gltfimage.image.size();
-		}
-
-		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
-
-		VkFormatProperties formatProperties;
-
-		width = gltfimage.width;
-		height = gltfimage.height;
-		mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
-
-		vkGetPhysicalDeviceFormatProperties(VulkanContext::device->physicalDevice, format, &formatProperties);
-		assert(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT);
-		assert(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT);
-
-		VkMemoryAllocateInfo memAllocInfo{};
-		memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		VkMemoryRequirements memReqs{};
-
-		VkBuffer stagingBuffer;
-		VkDeviceMemory stagingMemory;
-
-		VkBufferCreateInfo bufferCreateInfo{};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = bufferSize;
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateBuffer(VulkanContext::device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
-		vkGetBufferMemoryRequirements(VulkanContext::device->logicalDevice, stagingBuffer, &memReqs);
-		memAllocInfo.allocationSize = memReqs.size;
-		memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
-		VK_CHECK_RESULT(vkBindBufferMemory(VulkanContext::device->logicalDevice, stagingBuffer, stagingMemory, 0));
-
-		uint8_t *data;
-		VK_CHECK_RESULT(vkMapMemory(VulkanContext::device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void **)&data));
-		memcpy(data, buffer, bufferSize);
-		vkUnmapMemory(VulkanContext::device->logicalDevice, stagingMemory);
-
-		VkImageCreateInfo imageCreateInfo{};
-		imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-		imageCreateInfo.format = format;
-		imageCreateInfo.mipLevels = mipLevels;
-		imageCreateInfo.arrayLayers = 1;
-		imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-		imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-		imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageCreateInfo.extent = { width, height, 1 };
-		imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &imageCreateInfo, nullptr, &image));
-		vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, image, &memReqs);
-		memAllocInfo.allocationSize = memReqs.size;
-		memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-		VK_CHECK_RESULT(vkBindImageMemory(VulkanContext::device->logicalDevice, image, deviceMemory, 0));
-
-		VkCommandBuffer copyCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
-		VkImageSubresourceRange subresourceRange = {};
-		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		subresourceRange.levelCount = 1;
-		subresourceRange.layerCount = 1;
-
-		{
-			VkImageMemoryBarrier imageMemoryBarrier{};
-			imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			imageMemoryBarrier.srcAccessMask = 0;
-			imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			imageMemoryBarrier.image = image;
-			imageMemoryBarrier.subresourceRange = subresourceRange;
-			vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-		}
-
-		VkBufferImageCopy bufferCopyRegion = {};
-		bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		bufferCopyRegion.imageSubresource.mipLevel = 0;
-		bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
-		bufferCopyRegion.imageSubresource.layerCount = 1;
-		bufferCopyRegion.imageExtent.width = width;
-		bufferCopyRegion.imageExtent.height = height;
-		bufferCopyRegion.imageExtent.depth = 1;
-
-		vkCmdCopyBufferToImage(copyCmd, stagingBuffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferCopyRegion);
-
-		{
-			VkImageMemoryBarrier imageMemoryBarrier{};
-			imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			imageMemoryBarrier.image = image;
-			imageMemoryBarrier.subresourceRange = subresourceRange;
-			vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-		}
-
-		// @todo
-		VkQueue copyQueue = VulkanContext::graphicsQueue;
-
-		VulkanContext::device->flushCommandBuffer(copyCmd, copyQueue, true);
-
-		vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
-		vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
-
-		// Generate the mip chain (glTF uses jpg and png, so we need to create this manually)
-		VkCommandBuffer blitCmd = VulkanContext::device->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-		for (uint32_t i = 1; i < mipLevels; i++) {
-			VkImageBlit imageBlit{};
-
-			imageBlit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageBlit.srcSubresource.layerCount = 1;
-			imageBlit.srcSubresource.mipLevel = i - 1;
-			imageBlit.srcOffsets[1].x = int32_t(width >> (i - 1));
-			imageBlit.srcOffsets[1].y = int32_t(height >> (i - 1));
-			imageBlit.srcOffsets[1].z = 1;
-
-			imageBlit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageBlit.dstSubresource.layerCount = 1;
-			imageBlit.dstSubresource.mipLevel = i;
-			imageBlit.dstOffsets[1].x = int32_t(width >> i);
-			imageBlit.dstOffsets[1].y = int32_t(height >> i);
-			imageBlit.dstOffsets[1].z = 1;
-
-			VkImageSubresourceRange mipSubRange = {};
-			mipSubRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			mipSubRange.baseMipLevel = i;
-			mipSubRange.levelCount = 1;
-			mipSubRange.layerCount = 1;
-
-			{
-				VkImageMemoryBarrier imageMemoryBarrier{};
-				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-				imageMemoryBarrier.srcAccessMask = 0;
-				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrier.image = image;
-				imageMemoryBarrier.subresourceRange = mipSubRange;
-				vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+			else {
+				buffer = &gltfimage.image[0];
+				bufferSize = gltfimage.image.size();
 			}
 
-			vkCmdBlitImage(blitCmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageBlit, VK_FILTER_LINEAR);
+			width = gltfimage.width;
+			height = gltfimage.height;
+			mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
 
-			{
-				VkImageMemoryBarrier imageMemoryBarrier{};
-				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-				imageMemoryBarrier.image = image;
-				imageMemoryBarrier.subresourceRange = mipSubRange;
-				vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-			}
+			assetIndex = ApplicationContext::assetManager->add(gltfimage.name, new vks::Texture2D({
+				.buffer = buffer,
+				.bufferSize = bufferSize,
+				.texWidth = width,
+				.texHeight = height,
+				.format = VK_FORMAT_R8G8B8A8_SRGB,
+				// @todo
+				//.createSampler = false
+			}));
+
+			if (deleteBuffer)
+				delete[] buffer;
 		}
-
-		subresourceRange.levelCount = mipLevels;
-		imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-		{
-			VkImageMemoryBarrier imageMemoryBarrier{};
-			imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			imageMemoryBarrier.image = image;
-			imageMemoryBarrier.subresourceRange = subresourceRange;
-			vkCmdPipelineBarrier(blitCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-		}
-
-		VulkanContext::device->flushCommandBuffer(blitCmd, copyQueue, true);
 
 		VkSamplerCreateInfo samplerInfo{};
 		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -284,24 +154,9 @@ namespace vkglTF
 		samplerInfo.anisotropyEnable = VK_TRUE;
 		VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &samplerInfo, nullptr, &sampler));
 
-		VkImageViewCreateInfo viewInfo{};
-		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInfo.image = image;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format = format;
-		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
-		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		viewInfo.subresourceRange.layerCount = 1;
-		viewInfo.subresourceRange.levelCount = mipLevels;
-		VK_CHECK_RESULT(vkCreateImageView(VulkanContext::device->logicalDevice, &viewInfo, nullptr, &view));
-
 		descriptor.sampler = sampler;
 		descriptor.imageView = view;
 		descriptor.imageLayout = imageLayout;
-
-		if (deleteBuffer)
-			delete[] buffer;
-
 	}
 
 	// Primitive
@@ -675,7 +530,7 @@ namespace vkglTF
 				textureSampler = textureSamplers[tex.sampler];
 			}
 			vkglTF::Texture texture;
-			texture.fromglTfImage(image, textureSampler);
+			texture.fromglTfImage(image, filePath, textureSampler);
 			textures.push_back(texture);
 		}
 	}
@@ -944,9 +799,10 @@ namespace vkglTF
 		}
 	}
 
-	Model::Model(ModelCreateInfo createInfo) : pipelineLayout(createInfo.pipelineLayout) {
+	Model::Model(ModelCreateInfo createInfo) {
 		tinygltf::Model gltfModel;
 		tinygltf::TinyGLTF gltfContext;
+		gltfContext.SetImageLoader(loadImageDataFunc, nullptr);
 
 		std::string error;
 		std::string warning;
@@ -956,6 +812,8 @@ namespace vkglTF
 		if (extpos != std::string::npos) {
 			binary = (createInfo.filename.substr(extpos + 1, createInfo.filename.length() - extpos) == "glb");
 		}
+		size_t pos = createInfo.filename.find_last_of('/');
+		filePath = createInfo.filename.substr(0, pos);
 
 		bool fileLoaded = binary ? gltfContext.LoadBinaryFromFile(&gltfModel, &error, &warning, createInfo.filename.c_str()) : gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, createInfo.filename.c_str());
 
@@ -1087,7 +945,7 @@ namespace vkglTF
 		freeResources();
 	}
 
-	void Model::drawNode(Node *node, VkCommandBuffer commandBuffer)
+	void Model::drawNode(Node *node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials)
 	{
 		if (node->mesh) {
 			for (Primitive *primitive : node->mesh->primitives) {
@@ -1098,23 +956,35 @@ namespace vkglTF
 					nodeMatrix = currentParent->matrix * nodeMatrix;
 					currentParent = currentParent->parent;
 				}
-				// Pass the final matrix to the vertex shader using push constants
-				vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &nodeMatrix);
+				
+				// Material setup can explicitly be skipped if e.g. used for non standard glTF display
+				if (!skipMaterials) {
+					PushConstBlock pushConstBlock{};
+					pushConstBlock.mat = nodeMatrix;
+					pushConstBlock.mat[1][1] *= -1.0;
+					pushConstBlock.mat[2][2] *= -1.0;
+					pushConstBlock.mat = matrix * pushConstBlock.mat;
+					// @todo: different textures (base, normal, etc.)
+					pushConstBlock.textureIndex = primitive->material.baseColorTexture->assetIndex;
+					// Pass the final matrix to the vertex shader using push constants
+					vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstBlock), &pushConstBlock);
+				}
+				// @todo: images via push constants
 				vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
 			}
 		}
 		for (auto& child : node->children) {
-			drawNode(child, commandBuffer);
+			drawNode(child, commandBuffer, pipelineLayout, matrix);
 		}
 	}
 
-	void Model::draw(VkCommandBuffer commandBuffer)
+	void Model::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials)
 	{
 		const VkDeviceSize offsets[1] = { 0 };
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices->buffer, offsets);
 		vkCmdBindIndexBuffer(commandBuffer, indices->buffer, 0, VK_INDEX_TYPE_UINT32);
 		for (auto& node : nodes) {
-			drawNode(node, commandBuffer);
+			drawNode(node, commandBuffer, pipelineLayout, matrix, skipMaterials);
 		}
 	}
 

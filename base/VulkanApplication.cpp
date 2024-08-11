@@ -1086,7 +1086,7 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		resizing = false;
 		break;
 	}
-	camera.keys.shift = (GetKeyState(VK_SHIFT) & 0x8000);
+	//camera.keys.shift = (GetKeyState(VK_SHIFT) & 0x8000);
 }
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 int32_t VulkanApplication::handleAppInput(struct android_app* app, AInputEvent* event)
@@ -2013,19 +2013,15 @@ void VulkanApplication::handleMouseMove(int32_t x, int32_t y)
 	}
 
 	if (mouseButtons.left) {
-
-		// @todo
-		camera.rotate(dx * 1.25f * rotationSpeed * camera.rotationSpeed, dy * 1.25f * rotationSpeed * camera.rotationSpeed);
+		camera.rotate(glm::vec3(dy * camera.rotationSpeed, dx * camera.rotationSpeed, 0.0f));
 		viewUpdated = true;
 	}
 	if (mouseButtons.right) {
-		camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f * zoomSpeed));
+		//camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f));
 		viewUpdated = true;
 	}
 	if (mouseButtons.middle) {
-		cameraPos.x -= dx * 0.01f;
-		cameraPos.y -= dy * 0.01f;
-		camera.translate(glm::vec3(-dx * 0.01f, -dy * 0.01f, 0.0f));
+		//camera.translate(glm::vec3(-dx * 0.005f, -dy * 0.005f, 0.0f));
 		viewUpdated = true;
 	}
 	mousePos = glm::vec2((float)x, (float)y);

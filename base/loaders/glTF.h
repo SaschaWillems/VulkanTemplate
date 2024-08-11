@@ -73,6 +73,12 @@ namespace vkglTF
 		}
 	};
 
+	// @todo: add additional material parameters and image indices
+	struct PushConstBlock {
+		glm::mat4 mat;
+		uint32_t textureIndex;
+	};
+
 	struct Node;
 
 	struct BoundingBox {
@@ -93,6 +99,7 @@ namespace vkglTF
 	};
 
 	struct Texture {
+		uint32_t assetIndex{ 0 };
 		VkImage image;
 		VkImageLayout imageLayout;
 		VkDeviceMemory deviceMemory;
@@ -102,9 +109,8 @@ namespace vkglTF
 		uint32_t layerCount;
 		VkDescriptorImageInfo descriptor;
 		VkSampler sampler;
-		void updateDescriptor();
 		void destroy();
-		void fromglTfImage(tinygltf::Image& gltfimage, TextureSampler textureSampler);
+		void fromglTfImage(tinygltf::Image& gltfimage, std::string filePath, TextureSampler textureSampler);
 	};
 
 	struct Material {
@@ -220,7 +226,6 @@ namespace vkglTF
 	};
 
 	struct ModelCreateInfo {
-		VkPipelineLayout pipelineLayout;
 		const std::string filename;
 		float scale{ 1.0f };
 		bool enableHotReload{ false };
@@ -228,7 +233,6 @@ namespace vkglTF
 
 	class Model {
 	private:
-		VkPipelineLayout pipelineLayout;
 		struct LoaderInfo {
 			uint32_t* indexBuffer;
 			Vertex* vertexBuffer;
@@ -272,12 +276,13 @@ namespace vkglTF
 		} dimensions;
 
 		bool wantsReload = false;
+		std::string filePath = "";
 
 		Model(ModelCreateInfo createInfo);
 		~Model();
 
-		void drawNode(Node* node, VkCommandBuffer commandBuffer);
-		void draw(VkCommandBuffer commandBuffer);
+		void drawNode(Node* node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false);
+		void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false);
 		void getSceneDimensions();
 		void updateAnimation(uint32_t index, float time);
 		Node* findNode(Node* parent, uint32_t index);

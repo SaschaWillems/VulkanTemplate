@@ -14,9 +14,9 @@
 class AssetManager {
 public:
 	std::unordered_map<std::string, vkglTF::Model*> models{};
-	std::unordered_map<std::string, vks::Texture*> textures{};
+	std::vector<vks::Texture*> textures{};
 	~AssetManager();
-	void add(const std::string name, vkglTF::Model* model);
-	void add(const std::string name, vks::Texture2D* texture);
-	void add(const std::string name, vks::TextureCubeMap* cubemap);
+	vkglTF::Model* add(const std::string name, vkglTF::Model* model);
+	uint32_t add(const std::string name, vks::Texture2D* texture);
+	uint32_t add(const std::string name, vks::TextureCubeMap* cubemap);
 };
