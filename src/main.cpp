@@ -14,7 +14,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
 #include "simulation/RigidBody.hpp"
-
+#include <random>
+#include "time.h"
 
 // @todo: audio (music and sfx)
 // @todo: sync2 everywhere
@@ -66,7 +67,6 @@ private:
 	DescriptorSetLayout* descriptorSetLayout;
 	DescriptorSetLayout* descriptorSetLayoutTextures;
 	DescriptorSet* descriptorSetTextures;
-	float time{ 0.0f };
 	std::unordered_map<std::string, Pipeline*> pipelines;
 public:	
 	Application() : VulkanApplication() {
@@ -376,16 +376,20 @@ public:
 
 		// Set up a grid of asteroids for testing purposes
 
+		std::default_random_engine rndGenerator((unsigned)time(nullptr));
+		std::uniform_real_distribution<float> uniformDist(-1.0f, 1.0f);
+
 		const int r = 8;
 		const float s = 8.0f;
 		uint32_t a_idx = 0;
 		for (int32_t x = -r; x < r; x++) {
 			for (int32_t y = -r; y < r; y++) {
 				for (int32_t z = -r; z < r; z++) {
+					glm::vec3 rndOffset = glm::vec3(uniformDist(rndGenerator), uniformDist(rndGenerator), uniformDist(rndGenerator)) * 2.5f;
 					actorManager->addActor("asteroid" + std::to_string(a_idx), new Actor({
-						.position = glm::vec3(x, y, z) * s,
-						.rotation = glm::vec3(0.0f),
-						.scale = glm::vec3(5.0f),
+						.position = (glm::vec3(x, y, z) + rndOffset) * s,
+						.rotation = glm::vec3(360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator)),
+						.scale = glm::vec3(5.0f + uniformDist(rndGenerator) * 2.5f - uniformDist(rndGenerator) * 2.5f),
 						.model = assetManager->models["asteroid"],
 						.tag = "asteroid"
 					}));
@@ -555,7 +559,7 @@ public:
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
-		shaderData.time = time;
+		//shaderData.time = time;
 		shaderData.timer = timer;
 
 		shaderData.projection = camera.matrices.perspective;
@@ -580,7 +584,7 @@ public:
 			}
 		}
 
-		time += frameTimer;
+		//time += frameTimer;
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
