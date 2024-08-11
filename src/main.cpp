@@ -5,12 +5,21 @@
  */
 
 #include "VulkanContext.h"
+#include "ApplicationContext.h"
 #include "FileWatcher.hpp"
 #include <VulkanApplication.h>
 #include "AssetManager.h"
+#include "Texture.hpp"
 #include "glTF.h"
+#include <glm/gtc/type_ptr.hpp>
+#include <stdexcept>
+#include "simulation/RigidBody.hpp"
+
 
 // @todo: audio (music and sfx)
+// @todo: sync2 everywhere
+// @todo: timeline semaphores
+
 #ifdef TRACY_ENABLE
 void* operator new(size_t count)
 {
@@ -35,7 +44,13 @@ struct ShaderData {
 	float timer{ 0.0f };
 } shaderData;
 
+uint32_t skyboxIndex{ 0 };
+
+ActorManager* actorManager{ nullptr };
 AssetManager* assetManager{ nullptr };
+Actor* ship{ nullptr };
+
+const float zFar = 1024.0f * 8.0f;
 
 class Application : public VulkanApplication {
 private:
@@ -44,14 +59,15 @@ private:
 		DescriptorSet* descriptorSet;
 	};
 	std::vector<FrameObjects> frameObjects;
-	Pipeline* testPipeline;
-	Pipeline* glTFPipeline;
 	PipelineLayout* glTFPipelineLayout;
-	PipelineLayout* testPipelineLayout;
+	PipelineLayout* skyboxPipelineLayout;
 	FileWatcher* fileWatcher{ nullptr };
 	DescriptorPool* descriptorPool;
 	DescriptorSetLayout* descriptorSetLayout;
+	DescriptorSetLayout* descriptorSetLayoutTextures;
+	DescriptorSet* descriptorSetTextures;
 	float time{ 0.0f };
+	std::unordered_map<std::string, Pipeline*> pipelines;
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -70,6 +86,10 @@ public:
 		settings.sampleCount = VK_SAMPLE_COUNT_4_BIT;
 
 		assetManager = new AssetManager();
+		actorManager = new ActorManager();
+
+		ApplicationContext::assetManager = assetManager;
+
 		dxcCompiler = new Dxc();
 	}
 
@@ -81,22 +101,49 @@ public:
 			fileWatcher->stop();
 			delete fileWatcher;
 		}
-		delete testPipeline;
-		delete glTFPipeline;
+		for (auto& it : pipelines) {
+			delete it.second;
+		}
 		delete descriptorPool;
 		delete descriptorSetLayout;
 		delete assetManager;
+		delete actorManager;
+	}
+
+	void loadAssets() {
+		const std::map<std::string, std::string> files = {
+			{ "crate", "models/crate.gltf" },
+			{ "asteroid", "models/asteroid.glb" },
+			{ "spaceship", "models/spaceship/scene_ktx.gltf" }
+		};
+
+		// @todo: from JSON?
+		const bool hotReload = true;
+		for (auto& it : files) {
+			const std::string filename = getAssetPath() + it.second;
+			auto model = assetManager->add(it.first, new vkglTF::Model({
+				.filename = filename,
+				.enableHotReload = hotReload
+			}));
+			fileWatcher->addFile(filename, model);
+		}
 	}
 
 	void prepare() {
 		VulkanApplication::prepare();
 
+		fileWatcher = new FileWatcher();
+
+		loadAssets();
+
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
-		camera.type = Camera::CameraType::lookat;
-		//camera.type = Camera::CameraType::firstperson;
-		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, 1024.0f);
-		camera.rotate(-90.0f, 0.0f);
-		camera.setPosition({ 0.0f, 0.0f, -12.0f });
+		camera.type = Camera::CameraType::firstperson;
+		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, zFar);
+		camera.setPosition({ 0.0f, 0.0f, 0.0f });
+
+		//playerShip.localPosition = { 0.0f, 8.0f, -30.0f };
+		//playerShip.localPosition = { 0.0f, 0.0f, 0.0f };
+		//playerShip.localRotation = { 0.0f, 0.0f, 0.0f };
 
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
@@ -110,10 +157,11 @@ public:
 		}
 
 		descriptorPool = new DescriptorPool({
-			.name = "Test descriptor pool",
-			.maxSets = getFrameCount(),
+			.name = "Application descriptor pool",
+			.maxSets = getFrameCount() + 1,
 			.poolSizes = {
-				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = getFrameCount() },
+				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1024 /*getFrameCount()*/ },
+				{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1024 /*@todo*/},
 			}
 		});
 
@@ -132,6 +180,17 @@ public:
 				}
 			});
 		}
+		
+		// One large set for all textures
+
+		// @todo
+		skyboxIndex = assetManager->add("skybox", new vks::TextureCubeMap({
+			.filename = getAssetPath() + "textures/cubemap01.ktx",
+			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+		}));
 
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
@@ -143,79 +202,17 @@ public:
 		VkPipelineColorBlendAttachmentState blendAttachmentState{};
 		blendAttachmentState.colorWriteMask = 0xf;
 
-		testPipelineLayout = new PipelineLayout({
-			.layouts = { descriptorSetLayout->handle },
-		});
-
-		testPipeline = new Pipeline({
-			.name = "Fullscreen pass pipeline",
-			.shaders = {
-				getAssetPath() + "shaders/fullscreen.vert.hlsl",
-				getAssetPath() + "shaders/fullscreen.frag.hlsl"
-			},
-			.cache = pipelineCache,
-			.layout = *testPipelineLayout,
-			.inputAssemblyState = {
-				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-			},
-			.viewportState = {
-				.viewportCount = 1,
-				.scissorCount = 1
-			},
-			.rasterizationState = {
-				.polygonMode = VK_POLYGON_MODE_FILL,
-				.cullMode = VK_CULL_MODE_NONE,
-				.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-				.lineWidth = 1.0f
-			},
-			.multisampleState = {
-				.rasterizationSamples = settings.sampleCount,
-			},
-			.depthStencilState = {
-				.depthTestEnable = VK_FALSE,
-				.depthWriteEnable = VK_FALSE,
-			},
-			.blending = {
-				.attachments = { blendAttachmentState }
-			},
-			.dynamicState = {
-				DynamicState::Scissor,
-				DynamicState::Viewport
-			},
-			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
-			.enableHotReload = true
-			});
-
-		glTFPipelineLayout = new PipelineLayout({
-			.layouts = { descriptorSetLayout->handle },
-			.pushConstantRanges = {
-				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT, .offset = 0, .size = sizeof(glm::mat4) }
-			}
-		});
-
-		assetManager->add("crate", new vkglTF::Model({
-			.pipelineLayout = glTFPipelineLayout->handle,
-			.filename = getAssetPath() + "models/crate.gltf",
-			.enableHotReload = true
-		}));
-
-		assetManager->add("text", new vkglTF::Model({
-			.pipelineLayout = glTFPipelineLayout->handle,
-			.filename = getAssetPath() + "models/text.gltf",
-			.enableHotReload = true
-		}));
-			.enableHotReload = true
-		}));
-
 		// Use one large descriptor set for all imgages (aka "bindless")
 		std::vector<VkDescriptorImageInfo> textureDescriptors{};
-		for (auto i = 0; i < ApplicationContext::assetManager->textures.size(); i++) {
+		for (auto i = 0; i < assetManager->textures.size(); i++) {
+			// @todo: directly construct from asset manager=?
 			VkDescriptorImageInfo imageInfo{};
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfo.sampler = ApplicationContext::assetManager->textures[i]->sampler;
-			imageInfo.imageView = ApplicationContext::assetManager->textures[i]->view;
+			imageInfo.sampler = assetManager->textures[i]->sampler;
+			imageInfo.imageView = assetManager->textures[i]->view;
 			textureDescriptors.push_back(imageInfo);
 		};
+
 		descriptorSetLayoutTextures = new DescriptorSetLayout({
 			.descriptorIndexing = true,
 			.bindings = {
@@ -230,7 +227,8 @@ public:
 				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(vkglTF::PushConstBlock) }
 			}
 		});
-		glTFPipeline = new Pipeline({
+
+		pipelines["gltf"] = new Pipeline({
 			.shaders = {
 				getAssetPath() + "shaders/gltf.vert.hlsl",
 				getAssetPath() + "shaders/gltf.frag.hlsl"
@@ -248,7 +246,7 @@ public:
 			.rasterizationState = {
 				.polygonMode = VK_POLYGON_MODE_FILL,
 				.cullMode = VK_CULL_MODE_BACK_BIT,
-				.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+				.frontFace = VK_FRONT_FACE_CLOCKWISE,
 				.lineWidth = 1.0f
 			},
 			.multisampleState = {
@@ -268,7 +266,50 @@ public:
 			},
 			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
 			.enableHotReload = true
-			});
+		});
+
+		pipelines["playership"] = new Pipeline({
+			.shaders = {
+				getAssetPath() + "shaders/playership.vert.hlsl",
+				getAssetPath() + "shaders/gltf.frag.hlsl"
+			},
+			.cache = pipelineCache,
+			.layout = *glTFPipelineLayout,
+			.vertexInput = vkglTF::vertexInput,
+			.inputAssemblyState = {
+				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+			},
+			.viewportState = {
+				.viewportCount = 1,
+				.scissorCount = 1
+			},
+			.rasterizationState = {
+				.polygonMode = VK_POLYGON_MODE_FILL,
+				.cullMode = VK_CULL_MODE_BACK_BIT,
+				.frontFace = VK_FRONT_FACE_CLOCKWISE,
+				.lineWidth = 1.0f
+			},
+			.multisampleState = {
+				.rasterizationSamples = settings.sampleCount,
+			},
+			.depthStencilState = {
+				.depthTestEnable = VK_TRUE,
+				.depthWriteEnable = VK_TRUE,
+				.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			},
+			.blending = {
+				.attachments = { blendAttachmentState }
+			},
+			.dynamicState = {
+				DynamicState::Scissor,
+				DynamicState::Viewport
+			},
+			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
+			.enableHotReload = true
+		});
+
+		//
+
 		descriptorSetTextures = new DescriptorSet({
 			.pool = descriptorPool,
 			.variableDescriptorCount = static_cast<uint32_t>(textureDescriptors.size()),
@@ -278,21 +319,88 @@ public:
 			}
 		});
 
-		pipelineList.push_back(testPipeline);
-		pipelineList.push_back(glTFPipeline);
+		// @todo: push consts also used by gltf renderer
 
-		fileWatcher = new FileWatcher();
+		skyboxPipelineLayout = new PipelineLayout({
+			.layouts = { descriptorSetLayout->handle, descriptorSetLayoutTextures->handle },
+			.pushConstantRanges = {
+				{.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(glm::mat4) + sizeof(uint32_t) }
+			}
+		});
+
+		pipelines["skybox"] = new Pipeline({
+			.shaders = {
+				getAssetPath() + "shaders/skybox.vert.hlsl",
+				getAssetPath() + "shaders/skybox.frag.hlsl"
+			},
+			.cache = pipelineCache,
+			.layout = *skyboxPipelineLayout,
+			.vertexInput = vkglTF::vertexInput,
+			.inputAssemblyState = {
+				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+			},
+			.viewportState = {
+				.viewportCount = 1,
+				.scissorCount = 1
+			},
+			.rasterizationState = {
+				.polygonMode = VK_POLYGON_MODE_FILL,
+				.cullMode = VK_CULL_MODE_BACK_BIT,
+				.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+				.lineWidth = 1.0f
+			},
+			.multisampleState = {
+				.rasterizationSamples = settings.sampleCount,
+			},
+			.depthStencilState = {
+				.depthTestEnable = VK_FALSE,
+				.depthWriteEnable = VK_FALSE,
+				.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+			},
+			.blending = {
+				.attachments = { blendAttachmentState }
+			},
+			.dynamicState = {
+				DynamicState::Scissor,
+				DynamicState::Viewport
+			},
+			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
+			.enableHotReload = true
+		});
+
+		ship = actorManager->addActor("playership", new Actor({
+			.position = glm::vec3(0.0f),
+			.rotation = glm::vec3(0.0f),
+			.model = assetManager->models["spaceship"]
+		}));
+
+		// Set up a grid of asteroids for testing purposes
+
+		const int r = 8;
+		const float s = 8.0f;
+		uint32_t a_idx = 0;
+		for (int32_t x = -r; x < r; x++) {
+			for (int32_t y = -r; y < r; y++) {
+				for (int32_t z = -r; z < r; z++) {
+					actorManager->addActor("asteroid" + std::to_string(a_idx), new Actor({
+						.position = glm::vec3(x, y, z) * s,
+						.rotation = glm::vec3(0.0f),
+						.scale = glm::vec3(5.0f),
+						.model = assetManager->models["asteroid"],
+						.tag = "asteroid"
+					}));
+					a_idx++;
+				}
+			}
+		}
+
 		for (auto& pipeline : pipelineList) {
 			fileWatcher->addPipeline(pipeline);
-		}
-		for (auto& it : assetManager->models) {
-			fileWatcher->addFile(it.second->initialCreateInfo->filename, it.second);
 		}
 		fileWatcher->onFileChanged = [=](const std::string filename, const std::vector<void*> userdata) {
 			this->onFileChanged(filename, userdata);
 		};
 		fileWatcher->start();
-
 
 		prepared = true;
 	}
@@ -372,17 +480,52 @@ public:
 		};
 
 		cb->beginRendering(renderingInfo);
+		// Use negative viewport height to simplify asset related things
 		cb->setViewport(0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
+//		cb->setViewport(0.0f, (float)height, (float)width, -(float)height, 0.0f, 1.0f);
 		cb->setScissor(0, 0, width, height);
 
-		cb->bindPipeline(testPipeline);
-		cb->bindDescriptorSets(testPipelineLayout, { frame.descriptorSet });
-		cb->draw(3, 1, 0, 0);
+		//cb->bindPipeline(testPipeline);
+		//cb->bindDescriptorSets(testPipelineLayout, { frame.descriptorSet });
+		// @todo
+		//cb->draw(3, 1, 0, 0);
+
+		// @todo: push consts also used by gltf renderer
+		struct PushConstBlock {
+			glm::mat4 mat;
+			uint32_t textureIndex;
+		} pushConstBlock{};
+		pushConstBlock.textureIndex = skyboxIndex;
 
 		// @todo
-		cb->bindPipeline(glTFPipeline);
-		for (auto& it : assetManager->models) {
-			it.second->draw(cb->handle);
+		cb->bindPipeline(pipelines["skybox"]);
+		cb->bindDescriptorSets(skyboxPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
+		cb->updatePushConstant(skyboxPipelineLayout, 0, &pushConstBlock);
+		assetManager->models["crate"]->draw(cb->handle, glTFPipelineLayout->handle, glm::mat4(1.0f), true);
+
+		// @todo
+		cb->bindDescriptorSets(glTFPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
+		
+		//glm::vec3 currPos = { 0.0f, 8.0f, -30.0f }; //playerShip.localPosition;// +glm::vec3(0.0f, 0.0f, -playerShip.acceleration * 2.0f);
+		// glm::mat4 locMatrix = glm::translate(glm::mat4(1.0f), currPos);
+		// locMatrix = glm::scale(locMatrix, glm::vec3(0.5f));
+		// actorManager->actors["playership"]->position = camera.position * glm::vec3(-1.0f);
+		// cb->bindPipeline(pipelines["playership"]);
+		// ship->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+
+		cb->bindPipeline(pipelines["gltf"]);
+		
+		// Only draw asteroids for now
+		for (auto& it : actorManager->actors) {
+			if (it.second->tag != "asteroid") {
+				continue;
+			}
+			auto asteroid = it.second;
+			glm::mat4 locMatrix = asteroid->getMatrix();
+			//locMatrix = glm::translate(glm::mat4(1.0f), asteroid->position);
+			//locMatrix = glm::scale(locMatrix, glm::vec3(5.0f));
+			asteroid->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+
 		}
 
 		if (overlay->visible) {
@@ -405,13 +548,16 @@ public:
 	}
 
 	void render() {
-		ZoneScopedN("render");
+		ZoneScoped;
+
+		//pship.setOrientation(10.0f, 5.0f, 2.5f, 1.0f);
 
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
 		shaderData.time = time;
 		shaderData.timer = timer;
+
 		shaderData.projection = camera.matrices.perspective;
 		shaderData.view = camera.matrices.view;
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
@@ -438,8 +584,9 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		overlay.text("Time: %f", time);
-		overlay.text("Timer: %f", timer);
+		overlay.text("world pos: %.2f %.2f %.2f", camera.position.x, camera.position.y, camera.position.z);
+		overlay.text("orientation: %.2f %.2f %.2f", camera.rotation.x, camera.rotation.y, camera.rotation.z);
+		overlay.text("velocity: %.2f %.2f %.2f", camera.velocity.x, camera.velocity.y, camera.velocity.z);
 	}
 
 	void onFileChanged(const std::string filename, const std::vector<void*> owners) {
@@ -455,6 +602,10 @@ public:
 				}
 			}
 		}
+	}
+
+	virtual void keyPressed(uint32_t key)
+	{
 	}
 
 };

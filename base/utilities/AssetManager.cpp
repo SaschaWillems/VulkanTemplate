@@ -28,4 +28,3 @@ uint32_t AssetManager::add(const std::string name, vks::TextureCubeMap* cubemap)
 	textures.push_back(cubemap);
 	return static_cast<uint32_t>(textures.size() - 1);
 }
-}
