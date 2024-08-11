@@ -1,12 +1,10 @@
 /*
 * Basic camera class
 *
-* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2024 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
-
-#pragma once
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -20,37 +18,54 @@ private:
 	float fov;
 	float znear, zfar;
 
-	const glm::vec3 upVector = glm::vec3(0.0f, 1.0f, 0.0f);
-
 	void updateViewMatrix()
 	{
+		glm::mat4 currentMatrix = matrices.view;
+
+		glm::mat4 rotM = glm::mat4(1.0f);
+		glm::mat4 transM;
+
+		rotM = glm::rotate(rotM, glm::radians(rotation.x * (flipY ? -1.0f : 1.0f)), glm::vec3(1.0f, 0.0f, 0.0f));
+		rotM = glm::rotate(rotM, glm::radians(rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+		rotM = glm::rotate(rotM, glm::radians(rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+
+		glm::vec3 translation = position;
+		if (flipY) {
+			translation.y *= -1.0f;
+		}
+		transM = glm::translate(glm::mat4(1.0f), translation);
+
 		if (type == CameraType::firstperson)
 		{
-			matrices.view = glm::lookAt(position, position + frontVector(), upVector);
+			matrices.view = rotM * transM;
 		}
 		else
 		{
-			matrices.view = glm::translate(glm::mat4(1.0f), position);
-			matrices.view = glm::rotate(matrices.view, glm::radians(pitch), glm::vec3(-1.0f, 0.0f, 0.0f));
-			matrices.view = glm::rotate(matrices.view, glm::radians(yaw), glm::vec3(.0f, 1.0f, 0.0f));
+			matrices.view = transM * rotM;
 		}
 
-		updated = true;
+		viewPos = glm::vec4(position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
+
+		if (matrices.view != currentMatrix) {
+			updated = true;
+		}
 	};
 public:
 	enum CameraType { lookat, firstperson };
 	CameraType type = CameraType::lookat;
 
+	glm::vec3 rotation = glm::vec3();
 	glm::vec3 position = glm::vec3();
-
-	float yaw = 0.0f;
-	float pitch = 0.0f;
+	glm::vec4 viewPos = glm::vec4();
 
 	float rotationSpeed = 1.0f;
 	float movementSpeed = 1.0f;
-	float currMovementSpeed = 1.0f;
 
-	bool updated = false;
+	glm::vec3 acceleration;
+	glm::vec3 velocity;
+
+	bool updated = true;
+	bool flipY = false;
 
 	struct
 	{
@@ -64,24 +79,14 @@ public:
 		bool right = false;
 		bool up = false;
 		bool down = false;
-		bool shift = false;
 	} keys;
-
-	glm::vec3 frontVector()
-	{
-		glm::vec3 front;
-		front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-		front.y = sin(glm::radians(pitch));
-		front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-		return glm::normalize(front);
-	}
 
 	bool moving()
 	{
 		return keys.left || keys.right || keys.up || keys.down;
 	}
 
-	float getNearClip() { 
+	float getNearClip() {
 		return znear;
 	}
 
@@ -91,15 +96,29 @@ public:
 
 	void setPerspective(float fov, float aspect, float znear, float zfar)
 	{
+		glm::mat4 currentMatrix = matrices.perspective;
 		this->fov = fov;
 		this->znear = znear;
 		this->zfar = zfar;
 		matrices.perspective = glm::perspective(glm::radians(fov), aspect, znear, zfar);
+		if (flipY) {
+			matrices.perspective[1][1] *= -1.0f;
+		}
+		if (matrices.view != currentMatrix) {
+			updated = true;
+		}
 	};
 
 	void updateAspectRatio(float aspect)
 	{
+		glm::mat4 currentMatrix = matrices.perspective;
 		matrices.perspective = glm::perspective(glm::radians(fov), aspect, znear, zfar);
+		if (flipY) {
+			matrices.perspective[1][1] *= -1.0f;
+		}
+		if (matrices.view != currentMatrix) {
+			updated = true;
+		}
 	}
 
 	void setPosition(glm::vec3 position)
@@ -110,20 +129,13 @@ public:
 
 	void setRotation(glm::vec3 rotation)
 	{
-		// @todo
-		updateViewMatrix();
-	};
-
-	void rotate(float yaw, float pitch)
-	{
-		this->yaw += yaw;
-		this->pitch += pitch;
+		this->rotation = rotation;
 		updateViewMatrix();
 	}
 
 	void rotate(glm::vec3 delta)
 	{
-		// @todo
+		this->rotation += delta;
 		updateViewMatrix();
 	}
 
@@ -139,40 +151,61 @@ public:
 		updateViewMatrix();
 	}
 
+	void setRotationSpeed(float rotationSpeed)
+	{
+		this->rotationSpeed = rotationSpeed;
+	}
+
+	void setMovementSpeed(float movementSpeed)
+	{
+		this->movementSpeed = movementSpeed;
+	}
+
 	void update(float deltaTime)
 	{
 		updated = false;
 		if (type == CameraType::firstperson)
 		{
-			if (moving())
-			{
-				if (currMovementSpeed < movementSpeed) {
-					currMovementSpeed = movementSpeed;
-				}
-				if (keys.shift) {
-					currMovementSpeed += deltaTime * 10.0f;
-					if (currMovementSpeed > movementSpeed * 2.5f) {
-						currMovementSpeed -= movementSpeed * 2.5f;
-					}
-					//std::cout << currMovementSpeed << "\n";
-					currMovementSpeed = 150.0f;
-				} else {
-					currMovementSpeed = movementSpeed;
+			//if (moving())
+			//{
+				glm::vec3 camFront;
+				camFront.x = -cos(glm::radians(rotation.x)) * sin(glm::radians(rotation.y));
+				camFront.y = sin(glm::radians(rotation.x));
+				camFront.z = cos(glm::radians(rotation.x)) * cos(glm::radians(rotation.y));
+				camFront = glm::normalize(camFront);
+				glm::vec3 camUp = glm::normalize(glm::cross(camFront, glm::vec3(0.0f, 1.0f, 0.0f)));
+
+				float moveSpeed = deltaTime * movementSpeed;
+
+				acceleration = glm::vec3(0.0f);
+
+				if (keys.up) {
+					acceleration = camFront * moveSpeed;
+					//position += camFront * moveSpeed;
 				}
 
-				float moveSpeed = deltaTime * currMovementSpeed;
-				glm::vec3 front = frontVector();
-				if (keys.up)
-					position += front * moveSpeed;
-				if (keys.down)
-					position -= front * moveSpeed;
-				if (keys.left)
-					position -= glm::normalize(glm::cross(front, upVector)) * moveSpeed;
-				if (keys.right)
-					position += glm::normalize(glm::cross(front, upVector)) * moveSpeed;
-				updateViewMatrix();
-			}
+				if (keys.down) {
+					acceleration = camFront * -moveSpeed;
+					//position -= camFront * moveSpeed;
+				}
+
+				if (keys.left) {
+					position -= glm::normalize(glm::cross(camFront, glm::vec3(0.0f, 1.0f, 0.0f))) * moveSpeed;
+				}
+
+				if (keys.right) {
+					position += glm::normalize(glm::cross(camFront, glm::vec3(0.0f, 1.0f, 0.0f))) * moveSpeed;
+				}
+
+				velocity = velocity + acceleration * deltaTime;
+
+				// Integrate
+				// Friction
+				//float temp_accel = acceleration - friction * velocity * timeStep;
+				position = position + velocity;
+			//}
 		}
+		updateViewMatrix();
 	};
 
 	// Update camera passing separate axis data (gamepad)
@@ -189,11 +222,15 @@ public:
 			const float deadZone = 0.0015f;
 			const float range = 1.0f - deadZone;
 
-			glm::vec3 camFront = frontVector();
+			glm::vec3 camFront;
+			camFront.x = -cos(glm::radians(rotation.x)) * sin(glm::radians(rotation.y));
+			camFront.y = sin(glm::radians(rotation.x));
+			camFront.z = cos(glm::radians(rotation.x)) * cos(glm::radians(rotation.y));
+			camFront = glm::normalize(camFront);
 
 			float moveSpeed = deltaTime * movementSpeed * 2.0f;
 			float rotSpeed = deltaTime * rotationSpeed * 50.0f;
-			 
+
 			// Move
 			if (fabsf(axisLeft.y) > deadZone)
 			{
@@ -212,13 +249,13 @@ public:
 			if (fabsf(axisRight.x) > deadZone)
 			{
 				float pos = (fabsf(axisRight.x) - deadZone) / range;
-				//rotation.y += pos * ((axisRight.x < 0.0f) ? -1.0f : 1.0f) * rotSpeed;
+				rotation.y += pos * ((axisRight.x < 0.0f) ? -1.0f : 1.0f) * rotSpeed;
 				retVal = true;
 			}
 			if (fabsf(axisRight.y) > deadZone)
 			{
 				float pos = (fabsf(axisRight.y) - deadZone) / range;
-				//rotation.x -= pos * ((axisRight.y < 0.0f) ? -1.0f : 1.0f) * rotSpeed;
+				rotation.x -= pos * ((axisRight.y < 0.0f) ? -1.0f : 1.0f) * rotSpeed;
 				retVal = true;
 			}
 		}
