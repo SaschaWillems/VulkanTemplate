@@ -113,7 +113,8 @@ public:
 			bool left;
 		} buttons;
 		glm::vec2 cursorPos;
-		glm::vec2 lastCursorPos;
+		bool dragging = false;
+		glm::vec2 dragCursorPos;
 	} mouse{};
 
 	bool moving()
@@ -239,9 +240,10 @@ public:
 					angularAcceleration.z = rollSpeed;
 				}
 
-				if (mouse.buttons.left) {
-					float rotateSpeed = rotationSpeed * 0.025f;
-					glm::vec2 delta = glm::vec2((mouse.cursorPos.x / (float)viewportSize.x) - 0.5f, (mouse.cursorPos.y / (float)viewportSize.y) - 0.5f);
+				//if (mouse.buttons.left) {
+				if (mouse.dragging) {
+					float rotateSpeed = rotationSpeed * 0.0025f;
+					glm::vec2 delta = glm::normalize(mouse.cursorPos - mouse.dragCursorPos);
 					if (abs(glm::length(delta)) > 0.1f) {
 						angularAcceleration.x = -delta.y * rotateSpeed;
 						angularAcceleration.y = delta.x * rotateSpeed;
@@ -251,12 +253,12 @@ public:
 				// Integrate
 				velocity = velocity + acceleration * deltaTime;
 				if (glm::length(acceleration) == 0.0f) {
-					velocity -= velocity * 0.99f * deltaTime;
+					velocity -= velocity * 0.999f * deltaTime;
 				}
 
 				angularVelocity = angularVelocity + angularAcceleration * deltaTime;
 				if (glm::length(angularAcceleration) == 0.0f) {
-					angularVelocity -= angularVelocity * 0.99f * deltaTime;
+					angularVelocity -= angularVelocity * 0.999f * deltaTime;
 				}
 
 				position = position + velocity;
@@ -273,16 +275,16 @@ public:
 					position += camForward * -moveSpeed;
 				}
 				if (keys.left) {
-					position += camRight * moveSpeed;
-				}
-				if (keys.right) {
 					position += camRight * -moveSpeed;
 				}
+				if (keys.right) {
+					position += camRight * moveSpeed;
+				}
 				if (keys.up) {
-					position += camUp * moveSpeed;
+					position += camUp * -moveSpeed;
 				}
 				if (keys.down) {
-					position += camUp * -moveSpeed;
+					position += camUp * moveSpeed;
 				}
 
 				float rollSpeed = rotationSpeed * 0.01f;
@@ -295,7 +297,7 @@ public:
 
 				if (mouse.buttons.left) {
 					float rotateSpeed = rotationSpeed * 0.01f;
-					glm::vec2 delta = glm::vec2((mouse.cursorPos.x / (float)viewportSize.x) - 0.5f, (mouse.cursorPos.y / (float)viewportSize.y) - 0.5f);
+					glm::vec2 delta = glm::normalize(mouse.cursorPos - mouse.dragCursorPos);
 					if (abs(glm::length(delta)) > 0.1f) {
 						rotation *= glm::angleAxis(delta.x * rotateSpeed, axis.positiveY);
 						rotation *= glm::angleAxis(-delta.y * rotateSpeed, camRight);
