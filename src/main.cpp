@@ -16,6 +16,7 @@
 #include "simulation/RigidBody.hpp"
 #include <random>
 #include "time.h"
+#include "Frustum.hpp"
 
 // @todo: audio (music and sfx)
 // @todo: sync2 everywhere
@@ -52,6 +53,9 @@ AssetManager* assetManager{ nullptr };
 Actor* ship{ nullptr };
 
 const float zFar = 1024.0f * 8.0f;
+
+vks::Frustum frustum;
+uint32_t visibleObjects{ 0 };
 
 struct Skybox {
 	uint32_t radianceIndex{ 0 };
@@ -154,6 +158,7 @@ public:
 		loadAssets();
 
 		generateCubemaps(static_cast<vks::TextureCubeMap*>(assetManager->textures[skyboxIndex]));
+
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
 		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, zFar);
@@ -383,11 +388,17 @@ public:
 			.model = assetManager->models["spaceship"]
 		}));
 
-		// Set up a grid of asteroids for testing purposes
+		actorManager->addActor("orientation_crate", new Actor({
+			.position = glm::vec3(0.0f, 0.0f, -15.0f),
+			.rotation = glm::vec3(0.0f),
+			.scale = glm::vec3(0.5f),
+			.model = assetManager->models["crate"],
+			.tag = "asteroid"
+		}));
 
+		// Set up a grid of asteroids for testing purposes
 		std::default_random_engine rndGenerator((unsigned)time(nullptr));
 		std::uniform_real_distribution<float> uniformDist(-1.0f, 1.0f);
-
 		const int r = 8;
 		const float s = 8.0f;
 		uint32_t a_idx = 0;
@@ -982,15 +993,17 @@ public:
 		cb->bindPipeline(pipelines["gltf"]);
 		
 		// Only draw asteroids for now
+		visibleObjects = 0;
 		for (auto& it : actorManager->actors) {
 			if (it.second->tag != "asteroid") {
 				continue;
 			}
 			auto asteroid = it.second;
-			glm::mat4 locMatrix = asteroid->getMatrix();
-			//locMatrix = glm::translate(glm::mat4(1.0f), asteroid->position);
-			//locMatrix = glm::scale(locMatrix, glm::vec3(5.0f));
-			asteroid->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+			if (frustum.checkSphere(asteroid->position, asteroid->getRadius())) {
+				visibleObjects++;
+				glm::mat4 locMatrix = asteroid->getMatrix();
+				asteroid->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+			}
 
 		}
 
@@ -1017,10 +1030,12 @@ public:
 		ZoneScoped;
 
 		camera.viewportSize = glm::uvec2(width, height);
+
 		//pship.setOrientation(10.0f, 5.0f, 2.5f, 1.0f);
 
 		camera.mouse.buttons.left = mouseButtons.left;
 		camera.mouse.cursorPos = mousePos;
+
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
@@ -1030,6 +1045,9 @@ public:
 		shaderData.projection = camera.matrices.perspective;
 		shaderData.view = camera.matrices.view;
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
+
+		frustum.update(camera.matrices.perspective * camera.matrices.view);
+
 		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
 
@@ -1053,9 +1071,7 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		overlay.text("world pos: %.2f %.2f %.2f", camera.position.x, camera.position.y, camera.position.z);
-		overlay.text("orientation: %.2f %.2f %.2f", camera.rotation.x, camera.rotation.y, camera.rotation.z);
-		overlay.text("velocity: %.2f %.2f %.2f", camera.velocity.x, camera.velocity.y, camera.velocity.z);
+		overlay.text("visible objects: %d", visibleObjects);
 	}
 
 	void onFileChanged(const std::string filename, const std::vector<void*> owners) {

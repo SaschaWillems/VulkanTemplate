@@ -53,3 +53,10 @@ glm::mat4 Actor::getMatrix() const
 	const glm::mat4 s = glm::scale(glm::mat4(1.0f), scale);
 	return t * r * s;
 }
+
+float Actor::getRadius() const
+{
+	glm::vec3 size = (model->dimensions.max - model->dimensions.min) * scale * 1.1f;
+	float maxsize = std::max(size.x, std::max(size.y, size.z));
+	return maxsize / 2.0f;
+}

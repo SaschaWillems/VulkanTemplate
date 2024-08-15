@@ -30,6 +30,7 @@ public:
 	void rotate(const glm::vec3 delta);
 	void move(const glm::vec3 dir, float deltaT);
 	glm::mat4 getMatrix() const;
+	float getRadius() const;
 };
 
 class ActorManager {
