@@ -198,6 +198,8 @@ void VulkanApplication::renderFrame()
 	auto tEnd = std::chrono::high_resolution_clock::now();
 	auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
 	frameTimer = (float)tDiff / 1000.0f;
+	camera.mouse.buttons.left = mouseButtons.left;
+	camera.mouse.cursorPos = mousePos;
 	if (GetKeyState(VK_SHIFT) & 0x8000) {
 		camera.update(frameTimer * 2.5f);
 	} else {
@@ -999,16 +1001,28 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			switch (wParam)
 			{
 			case KEY_W:
-				camera.keys.up = true;
+				camera.keys.forward = true;
 				break;
 			case KEY_S:
-				camera.keys.down = true;
+				camera.keys.backward = true;
 				break;
 			case KEY_A:
 				camera.keys.left = true;
 				break;
 			case KEY_D:
 				camera.keys.right = true;
+				break;
+			case 0x51:
+				camera.keys.rollLeft = true;
+				break;
+			case 0x45:
+				camera.keys.rollRight = true;
+				break;
+			case KEY_SPACE:
+				camera.keys.up = true;
+				break;
+			case VK_CONTROL:
+				camera.keys.down = true;
 				break;
 			}
 		}
@@ -1021,10 +1035,10 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			switch (wParam)
 			{
 			case KEY_W:
-				camera.keys.up = false;
+				camera.keys.forward = false;
 				break;
 			case KEY_S:
-				camera.keys.down = false;
+				camera.keys.backward = false;
 				break;
 			case KEY_A:
 				camera.keys.left = false;
@@ -1032,12 +1046,29 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			case KEY_D:
 				camera.keys.right = false;
 				break;
+			case 0x51:
+				camera.keys.rollLeft = false;
+				break;
+			case 0x45:
+				camera.keys.rollRight = false;
+				break;
+			case KEY_SPACE:
+				camera.keys.up = false;
+				break;
+			case VK_CONTROL:
+				camera.keys.down = false;
+				break;
 			}
 		}
 		break;
 	case WM_LBUTTONDOWN:
 		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
 		mouseButtons.left = true;
+		// @todo: move to camera func
+		if (!camera.mouse.dragging) {
+			camera.mouse.dragCursorPos = mousePos;
+		};
+		camera.mouse.dragging = true;
 		break;
 	case WM_RBUTTONDOWN:
 		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
@@ -1049,6 +1080,7 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		break;
 	case WM_LBUTTONUP:
 		mouseButtons.left = false;
+		camera.mouse.dragging = false;
 		break;
 	case WM_RBUTTONUP:
 		mouseButtons.right = false;
@@ -2012,10 +2044,10 @@ void VulkanApplication::handleMouseMove(int32_t x, int32_t y)
 		return;
 	}
 
-	if (mouseButtons.left) {
-		camera.rotate(glm::vec3(dy * camera.rotationSpeed, dx * camera.rotationSpeed, 0.0f));
-		viewUpdated = true;
-	}
+	//if (mouseButtons.left) {
+	//	camera.rotate(glm::vec3(dy * camera.rotationSpeed, dx * camera.rotationSpeed, 0.0f));
+	//	viewUpdated = true;
+	//}
 	if (mouseButtons.right) {
 		//camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f));
 		viewUpdated = true;

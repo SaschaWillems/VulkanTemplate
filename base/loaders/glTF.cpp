@@ -119,6 +119,11 @@ namespace vkglTF
 				bufferSize = gltfimage.image.size();
 			}
 
+			VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+			if (gltfimage.pixel_type == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+				format = VK_FORMAT_R16G16B16A16_UNORM;
+			}
+
 			width = gltfimage.width;
 			height = gltfimage.height;
 			mipLevels = static_cast<uint32_t>(floor(log2(std::max(width, height))) + 1.0);
@@ -128,7 +133,7 @@ namespace vkglTF
 				.bufferSize = bufferSize,
 				.texWidth = width,
 				.texHeight = height,
-				.format = VK_FORMAT_R8G8B8A8_SRGB,
+				.format = format,
 				// @todo
 				//.createSampler = false
 			}));

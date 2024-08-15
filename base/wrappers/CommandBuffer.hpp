@@ -24,9 +24,9 @@ struct CommandBufferCreateInfo {
 class CommandBuffer {
 private:
 	Device& device;
-	CommandPool *pool = nullptr;
 	VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 public:
+	CommandPool *pool = nullptr;
 	VkCommandBuffer handle = VK_NULL_HANDLE;
 	CommandBuffer(Device& device) : device(device) {
 		this->device = device;
@@ -108,5 +108,19 @@ public:
 	void bindIndexBuffer(VkBuffer buffer, VkDeviceSize offset = 0, VkIndexType indexType = VK_INDEX_TYPE_UINT32)
 	{
 		vkCmdBindIndexBuffer(this->handle, buffer, offset, indexType);
+	}
+	void oneTimeSubmit(VkQueue queue)
+	{
+		VkSubmitInfo submitInfo = vks::initializers::submitInfo();
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &handle;
+
+		VkFenceCreateInfo fenceInfo = vks::initializers::fenceCreateInfo(VK_FLAGS_NONE);
+		VkFence fence;
+		VK_CHECK_RESULT(vkCreateFence(device.logicalDevice, &fenceInfo, nullptr, &fence));
+		VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence));
+		VK_CHECK_RESULT(vkWaitForFences(device.logicalDevice, 1, &fence, VK_TRUE, DEFAULT_FENCE_TIMEOUT));
+		vkDestroyFence(device.logicalDevice, fence, nullptr);
+		vkResetCommandBuffer(handle, 0);
 	}
 };

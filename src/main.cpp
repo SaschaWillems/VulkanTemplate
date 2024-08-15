@@ -16,6 +16,7 @@
 #include "simulation/RigidBody.hpp"
 #include <random>
 #include "time.h"
+#include "Frustum.hpp"
 
 // @todo: audio (music and sfx)
 // @todo: sync2 everywhere
@@ -52,6 +53,14 @@ AssetManager* assetManager{ nullptr };
 Actor* ship{ nullptr };
 
 const float zFar = 1024.0f * 8.0f;
+
+vks::Frustum frustum;
+uint32_t visibleObjects{ 0 };
+
+struct Skybox {
+	uint32_t radianceIndex{ 0 };
+	uint32_t irradianceIndex{ 0 };
+} skybox;
 
 class Application : public VulkanApplication {
 private:
@@ -112,7 +121,7 @@ public:
 
 	void loadAssets() {
 		const std::map<std::string, std::string> files = {
-			{ "crate", "models/crate.gltf" },
+			{ "crate", "models/crate_up.glb" },
 			{ "asteroid", "models/asteroid.glb" },
 			{ "spaceship", "models/spaceship/scene_ktx.gltf" }
 		};
@@ -127,6 +136,18 @@ public:
 			}));
 			fileWatcher->addFile(filename, model);
 		}
+
+		// Additional textures
+		// @todo
+		skyboxIndex = assetManager->add("skybox", new vks::TextureCubeMap({
+			.filename = getAssetPath() + "textures/space01.ktx",
+			//.filename = getAssetPath() + "textures/cubemap01.ktx",
+			//.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+		}));
 	}
 
 	void prepare() {
@@ -135,6 +156,8 @@ public:
 		fileWatcher = new FileWatcher();
 
 		loadAssets();
+
+		generateCubemaps(static_cast<vks::TextureCubeMap*>(assetManager->textures[skyboxIndex]));
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
@@ -182,15 +205,6 @@ public:
 		}
 		
 		// One large set for all textures
-
-		// @todo
-		skyboxIndex = assetManager->add("skybox", new vks::TextureCubeMap({
-			.filename = getAssetPath() + "textures/cubemap01.ktx",
-			.format = VK_FORMAT_R8G8B8A8_SRGB,
-			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-		}));
 
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
@@ -374,11 +388,17 @@ public:
 			.model = assetManager->models["spaceship"]
 		}));
 
-		// Set up a grid of asteroids for testing purposes
+		actorManager->addActor("orientation_crate", new Actor({
+			.position = glm::vec3(0.0f, 0.0f, -15.0f),
+			.rotation = glm::vec3(0.0f),
+			.scale = glm::vec3(0.5f),
+			.model = assetManager->models["crate"],
+			.tag = "asteroid"
+		}));
 
+		// Set up a grid of asteroids for testing purposes
 		std::default_random_engine rndGenerator((unsigned)time(nullptr));
 		std::uniform_real_distribution<float> uniformDist(-1.0f, 1.0f);
-
 		const int r = 8;
 		const float s = 8.0f;
 		uint32_t a_idx = 0;
@@ -408,6 +428,459 @@ public:
 
 		prepared = true;
 	}
+
+#pragma region PBR
+	void generateCubemaps(vks::TextureCubeMap* source)
+	{
+		enum Target { IRRADIANCE = 0, PREFILTEREDENV = 1 };
+
+		for (uint32_t target = 0; target < PREFILTEREDENV + 1; target++) {
+
+			vks::TextureCubeMap* cubemap = new vks::TextureCubeMap();
+
+			auto tStart = std::chrono::high_resolution_clock::now();
+
+			VkFormat format;
+			int32_t dim;
+
+			switch (target) {
+			case IRRADIANCE:
+				format = VK_FORMAT_R32G32B32A32_SFLOAT;
+				dim = 64;
+				break;
+			case PREFILTEREDENV:
+				format = VK_FORMAT_R16G16B16A16_SFLOAT;
+				dim = 512;
+				break;
+			};
+
+			const uint32_t numMips = static_cast<uint32_t>(floor(log2(dim))) + 1;
+
+			Device* device = VulkanContext::device;
+
+			// Create target cubemap
+			// Image
+			VkImageCreateInfo imageCI = vks::initializers::imageCreateInfo();
+			imageCI.imageType = VK_IMAGE_TYPE_2D;
+			imageCI.format = format;
+			imageCI.extent.width = dim;
+			imageCI.extent.height = dim;
+			imageCI.extent.depth = 1;
+			imageCI.mipLevels = numMips;
+			imageCI.arrayLayers = 6;
+			imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+			imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+			imageCI.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			imageCI.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+			VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCI, nullptr, &cubemap->image));
+			VkMemoryRequirements memReqs;
+			vkGetImageMemoryRequirements(device->logicalDevice, cubemap->image, &memReqs);
+			VkMemoryAllocateInfo memAllocInfo{};
+			memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			memAllocInfo.allocationSize = memReqs.size;
+			memAllocInfo.memoryTypeIndex = device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+			VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &cubemap->deviceMemory));
+			VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, cubemap->image, cubemap->deviceMemory, 0));
+
+			// View
+			VkImageViewCreateInfo viewCI = vks::initializers::imageViewCreateInfo();
+			viewCI.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+			viewCI.format = format;
+			viewCI.subresourceRange = {};
+			viewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			viewCI.subresourceRange.levelCount = numMips;
+			viewCI.subresourceRange.layerCount = 6;
+			viewCI.image = cubemap->image;
+			VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCI, nullptr, &cubemap->view));
+
+			// Sampler
+			// @todo: still required?
+			VkSamplerCreateInfo samplerCI = vks::initializers::samplerCreateInfo();
+			samplerCI.magFilter = VK_FILTER_LINEAR;
+			samplerCI.minFilter = VK_FILTER_LINEAR;
+			samplerCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+			samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerCI.minLod = 0.0f;
+			samplerCI.maxLod = static_cast<float>(numMips);
+			samplerCI.maxAnisotropy = 1.0f;
+			samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+			VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCI, nullptr, &cubemap->sampler));
+
+			struct Offscreen {
+				VkImage image;
+				VkImageView view;
+				VkDeviceMemory memory;
+			} offscreen;
+
+			// Create offscreen framebuffer
+			{
+				// Image
+				VkImageCreateInfo imageCI = vks::initializers::imageCreateInfo();
+				imageCI.imageType = VK_IMAGE_TYPE_2D;
+				imageCI.format = format;
+				imageCI.extent.width = dim;
+				imageCI.extent.height = dim;
+				imageCI.extent.depth = 1;
+				imageCI.mipLevels = 1;
+				imageCI.arrayLayers = 1;
+				imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+				imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+				imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+				imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+				VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCI, nullptr, &offscreen.image));
+				VkMemoryRequirements memReqs;
+				vkGetImageMemoryRequirements(device->logicalDevice, offscreen.image, &memReqs);
+				VkMemoryAllocateInfo memAllocInfo{};
+				memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+				memAllocInfo.allocationSize = memReqs.size;
+				memAllocInfo.memoryTypeIndex = device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+				VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &offscreen.memory));
+				VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, offscreen.image, offscreen.memory, 0));
+
+				// View
+				VkImageViewCreateInfo viewCI = vks::initializers::imageViewCreateInfo();
+				viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				viewCI.format = format;
+				viewCI.subresourceRange = {};
+				viewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				viewCI.subresourceRange.baseMipLevel = 0;
+				viewCI.subresourceRange.levelCount = 1;
+				viewCI.subresourceRange.baseArrayLayer = 0;
+				viewCI.subresourceRange.layerCount = 1;
+				viewCI.image = offscreen.image;
+				VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCI, nullptr, &offscreen.view));
+
+				VkCommandBuffer layoutCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.image = offscreen.image;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = 0;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+				imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+				vkCmdPipelineBarrier(layoutCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				vulkanDevice->flushCommandBuffer(layoutCmd, queue, true);
+			}
+
+			// Descriptors
+			VkDescriptorSetLayout descriptorsetlayout;
+			VkDescriptorSetLayoutBinding setLayoutBinding = { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
+			VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
+			descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			descriptorSetLayoutCI.pBindings = &setLayoutBinding;
+			descriptorSetLayoutCI.bindingCount = 1;
+			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorSetLayoutCI, nullptr, &descriptorsetlayout));
+
+			// Descriptor Pool
+			VkDescriptorPoolSize poolSize = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
+			VkDescriptorPoolCreateInfo descriptorPoolCI{};
+			descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+			descriptorPoolCI.poolSizeCount = 1;
+			descriptorPoolCI.pPoolSizes = &poolSize;
+			descriptorPoolCI.maxSets = 2;
+			VkDescriptorPool descriptorpool;
+			VK_CHECK_RESULT(vkCreateDescriptorPool(device->logicalDevice, &descriptorPoolCI, nullptr, &descriptorpool));
+
+			// Descriptor sets
+			VkDescriptorSet descriptorset;
+			VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
+			descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+			descriptorSetAllocInfo.descriptorPool = descriptorpool;
+			descriptorSetAllocInfo.pSetLayouts = &descriptorsetlayout;
+			descriptorSetAllocInfo.descriptorSetCount = 1;
+			VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &descriptorset));
+			VkWriteDescriptorSet writeDescriptorSet{};
+			writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writeDescriptorSet.descriptorCount = 1;
+			writeDescriptorSet.dstSet = descriptorset;
+			writeDescriptorSet.dstBinding = 0;
+			writeDescriptorSet.pImageInfo = &source->descriptor;
+			vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
+
+			struct PushBlockIrradiance {
+				glm::mat4 mvp;
+				float deltaPhi = (2.0f * float(M_PI)) / 180.0f;
+				float deltaTheta = (0.5f * float(M_PI)) / 64.0f;
+			} pushBlockIrradiance;
+
+			struct PushBlockPrefilterEnv {
+				glm::mat4 mvp;
+				float roughness = 0.0f;
+				uint32_t numSamples = 32u;
+			} pushBlockPrefilterEnv;
+
+			// Pipeline layout
+			VkPipelineLayout pipelinelayout;
+			VkPushConstantRange pushConstantRange{};
+			pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+			switch (target) {
+			case IRRADIANCE:
+				pushConstantRange.size = sizeof(PushBlockIrradiance);
+				break;
+			case PREFILTEREDENV:
+				pushConstantRange.size = sizeof(PushBlockPrefilterEnv);
+				break;
+			};
+
+			VkPipelineLayoutCreateInfo pipelineLayoutCI{};
+			pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+			pipelineLayoutCI.setLayoutCount = 1;
+			pipelineLayoutCI.pSetLayouts = &descriptorsetlayout;
+			pipelineLayoutCI.pushConstantRangeCount = 1;
+			pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
+			VK_CHECK_RESULT(vkCreatePipelineLayout(device->logicalDevice, &pipelineLayoutCI, nullptr, &pipelinelayout));
+
+			std::string vertexShader = "filtercube.vert.hlsl";
+			std::string fragmentShader;
+			switch (target) {
+			case IRRADIANCE:
+				fragmentShader = "filtercube_irradiance.frag.hlsl";
+				break;
+			case PREFILTEREDENV:
+				fragmentShader = "filtercube_radiance.frag.hlsl";
+				break;
+			};
+
+			// Pipeline
+			Pipeline* pipeline = new Pipeline({
+				.shaders = {
+					getAssetPath() + "shaders/" + vertexShader,
+					getAssetPath() + "shaders/" + fragmentShader
+				},
+				.cache = pipelineCache,
+				.layout = pipelinelayout,
+				.vertexInput = vkglTF::vertexInput,
+				.inputAssemblyState = {
+					.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+				},
+				.viewportState = {
+					.viewportCount = 1,
+					.scissorCount = 1
+				},
+				.rasterizationState = {
+					.polygonMode = VK_POLYGON_MODE_FILL,
+					.cullMode = VK_CULL_MODE_NONE,
+					.frontFace = VK_FRONT_FACE_CLOCKWISE,
+					.lineWidth = 1.0f
+				},
+				.multisampleState = {
+					.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+				},
+				.depthStencilState = {
+					.depthTestEnable = VK_FALSE,
+					.depthWriteEnable = VK_FALSE,
+					.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
+				},
+				.blending = {
+					.attachments = { 
+						{.blendEnable = VK_FALSE, .colorWriteMask = 0xF }
+					}
+				},
+				.dynamicState = {
+					DynamicState::Scissor,
+					DynamicState::Viewport
+				},
+				.pipelineRenderingInfo = {
+					.colorAttachmentCount = 1,
+					.pColorAttachmentFormats = &format,
+				},
+				.enableHotReload = false
+			});
+
+
+			VkRenderingAttachmentInfo colorAttachment{};
+			colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+			colorAttachment.imageView = offscreen.view;
+			colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
+			colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			colorAttachment.clearValue.color = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+			VkRenderingInfo renderingInfo = {
+				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
+				.renderArea = { 0, 0, static_cast<uint32_t>(dim), static_cast<uint32_t>(dim) },
+				.layerCount = 1,
+				.colorAttachmentCount = 1,
+				.pColorAttachments = &colorAttachment,
+			};
+
+			// Render cubemap
+			std::vector<glm::mat4> matrices = {
+				glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+				glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+				glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+				glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+				glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
+				glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+			};
+
+			CommandBuffer* cb = new CommandBuffer({ .device = *vulkanDevice, .pool = commandPool });
+
+			VkImageSubresourceRange subresourceRange{};
+			subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			subresourceRange.baseMipLevel = 0;
+			subresourceRange.levelCount = numMips;
+			subresourceRange.layerCount = 6;
+
+			// Change image layout for all cubemap faces to transfer destination
+			{
+				cb->begin();
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.image = cubemap->image;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = 0;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.subresourceRange = subresourceRange;
+				vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				cb->end();
+				cb->oneTimeSubmit(queue);
+			}
+
+			for (uint32_t m = 0; m < numMips; m++) {
+				for (uint32_t f = 0; f < 6; f++) {
+
+					cb->begin();
+					{
+						VkImageMemoryBarrier imageMemoryBarrier{};
+						imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+						imageMemoryBarrier.image = offscreen.image;
+						imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+						imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+						imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+						imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+						imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+						vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+					}
+
+					cb->beginRendering(renderingInfo);
+
+					glm::vec2 viewport = glm::vec2(static_cast<float>(dim * std::pow(0.5f, m)), static_cast<float>(dim * std::pow(0.5f, m)));
+
+					cb->setViewport(0, 0, viewport.x, viewport.y, 0.0f, 1.0f);
+					cb->setScissor(0, 0, static_cast<uint32_t>(viewport.x), static_cast<uint32_t>(viewport.y));
+					
+					// Pass parameters for current pass using a push constant block
+					switch (target) {
+					case IRRADIANCE:
+						pushBlockIrradiance.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
+						vkCmdPushConstants(cb->handle, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockIrradiance), &pushBlockIrradiance);
+						break;
+					case PREFILTEREDENV:
+						pushBlockPrefilterEnv.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
+						pushBlockPrefilterEnv.roughness = (float)m / (float)(numMips - 1);
+						vkCmdPushConstants(cb->handle, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockPrefilterEnv), &pushBlockPrefilterEnv);
+						break;
+					};
+
+					vkCmdBindPipeline(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
+					vkCmdBindDescriptorSets(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset, 0, NULL);
+
+					VkDeviceSize offsets[1] = { 0 };
+
+					assetManager->models["crate"]->draw(cb->handle, pipelinelayout, glm::mat4(1.0f), true);
+
+					cb->endRendering();
+
+					VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+					subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					subresourceRange.baseMipLevel = 0;
+					subresourceRange.levelCount = numMips;
+					subresourceRange.layerCount = 6;
+
+					// Copy region for transfer from framebuffer to cube face
+					VkImageCopy copyRegion{};
+
+					copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					copyRegion.srcSubresource.baseArrayLayer = 0;
+					copyRegion.srcSubresource.mipLevel = 0;
+					copyRegion.srcSubresource.layerCount = 1;
+					copyRegion.srcOffset = { 0, 0, 0 };
+
+					copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					copyRegion.dstSubresource.baseArrayLayer = f;
+					copyRegion.dstSubresource.mipLevel = m;
+					copyRegion.dstSubresource.layerCount = 1;
+					copyRegion.dstOffset = { 0, 0, 0 };
+
+					copyRegion.extent.width = static_cast<uint32_t>(viewport.x);
+					copyRegion.extent.height = static_cast<uint32_t>(viewport.y);
+					copyRegion.extent.depth = 1;
+
+					vkCmdCopyImage(cb->handle, offscreen.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+
+					{
+						VkImageMemoryBarrier imageMemoryBarrier{};
+						imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+						imageMemoryBarrier.image = offscreen.image;
+						imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+						imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+						imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+						imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+						imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+						vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+					}
+
+					cb->end();
+					cb->oneTimeSubmit(queue);
+				}
+			}
+
+			{
+				// @todo: why separate cb?
+				cb->begin();
+				VkImageMemoryBarrier imageMemoryBarrier{};
+				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				imageMemoryBarrier.image = cubemap->image;
+				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+				imageMemoryBarrier.subresourceRange = subresourceRange;
+				vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+				cb->end();
+				cb->oneTimeSubmit(queue);
+			}
+
+
+			vkFreeMemory(device->logicalDevice, offscreen.memory, nullptr);
+			vkDestroyImageView(device->logicalDevice, offscreen.view, nullptr);
+			vkDestroyImage(device->logicalDevice, offscreen.image, nullptr);
+			vkDestroyDescriptorPool(device->logicalDevice, descriptorpool, nullptr);
+			vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorsetlayout, nullptr);
+			vkDestroyPipelineLayout(device->logicalDevice, pipelinelayout, nullptr);
+
+			cubemap->descriptor.imageView = cubemap->view;
+			cubemap->descriptor.sampler = cubemap->sampler;
+			cubemap->descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+			switch (target) {
+			case IRRADIANCE:
+				skybox.irradianceIndex = assetManager->add("skybox_irradiance", cubemap);
+				break;
+			case PREFILTEREDENV:
+				skybox.radianceIndex = assetManager->add("skybox_radiance", cubemap);
+				break;
+			};
+
+			delete cb;
+			delete pipeline;
+
+			auto tEnd = std::chrono::high_resolution_clock::now();
+			auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
+			std::cout << "Generating cube map with " << numMips << " mip levels took " << tDiff << " ms" << std::endl;
+		}
+	}
+
+#pragma endregion PBR
 
 	void recordCommandBuffer(FrameObjects& frame)
 	{
@@ -520,15 +993,17 @@ public:
 		cb->bindPipeline(pipelines["gltf"]);
 		
 		// Only draw asteroids for now
+		visibleObjects = 0;
 		for (auto& it : actorManager->actors) {
 			if (it.second->tag != "asteroid") {
 				continue;
 			}
 			auto asteroid = it.second;
-			glm::mat4 locMatrix = asteroid->getMatrix();
-			//locMatrix = glm::translate(glm::mat4(1.0f), asteroid->position);
-			//locMatrix = glm::scale(locMatrix, glm::vec3(5.0f));
-			asteroid->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+			if (frustum.checkSphere(asteroid->position, asteroid->getRadius())) {
+				visibleObjects++;
+				glm::mat4 locMatrix = asteroid->getMatrix();
+				asteroid->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+			}
 
 		}
 
@@ -554,7 +1029,12 @@ public:
 	void render() {
 		ZoneScoped;
 
+		camera.viewportSize = glm::uvec2(width, height);
+
 		//pship.setOrientation(10.0f, 5.0f, 2.5f, 1.0f);
+
+		camera.mouse.buttons.left = mouseButtons.left;
+		camera.mouse.cursorPos = mousePos;
 
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
@@ -565,6 +1045,9 @@ public:
 		shaderData.projection = camera.matrices.perspective;
 		shaderData.view = camera.matrices.view;
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
+
+		frustum.update(camera.matrices.perspective * camera.matrices.view);
+
 		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
 
@@ -588,9 +1071,7 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		overlay.text("world pos: %.2f %.2f %.2f", camera.position.x, camera.position.y, camera.position.z);
-		overlay.text("orientation: %.2f %.2f %.2f", camera.rotation.x, camera.rotation.y, camera.rotation.z);
-		overlay.text("velocity: %.2f %.2f %.2f", camera.velocity.x, camera.velocity.y, camera.velocity.z);
+		overlay.text("visible objects: %d", visibleObjects);
 	}
 
 	void onFileChanged(const std::string filename, const std::vector<void*> owners) {
@@ -610,6 +1091,9 @@ public:
 
 	virtual void keyPressed(uint32_t key)
 	{
+		if (key == KEY_P) {
+			camera.physicsBased = !camera.physicsBased;
+		}
 	}
 
 };

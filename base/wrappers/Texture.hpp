@@ -518,6 +518,7 @@ namespace vks
 
 	class TextureCubeMap : public Texture {
 	public:
+		TextureCubeMap() { };
 		TextureCubeMap(TextureCreateInfo createInfo)
 		{
 			ktxTexture* ktxTexture;
