@@ -238,7 +238,7 @@ public:
 			.layouts = { descriptorSetLayout->handle, descriptorSetLayoutTextures->handle },
 			.pushConstantRanges = {
 				// @todo
-				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(vkglTF::PushConstBlock) }
+				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
 			}
 		});
 
@@ -334,11 +334,10 @@ public:
 		});
 
 		// @todo: push consts also used by gltf renderer
-
 		skyboxPipelineLayout = new PipelineLayout({
 			.layouts = { descriptorSetLayout->handle, descriptorSetLayoutTextures->handle },
 			.pushConstantRanges = {
-				{.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(glm::mat4) + sizeof(uint32_t) }
+				{.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(PushConstBlock)}
 			}
 		});
 
@@ -418,6 +417,10 @@ public:
 			}
 		}
 
+		pipelineList.push_back(pipelines["skybox"]);
+		pipelineList.push_back(pipelines["playership"]);
+		pipelineList.push_back(pipelines["gltf"]);
+
 		for (auto& pipeline : pipelineList) {
 			fileWatcher->addPipeline(pipeline);
 		}
@@ -432,9 +435,9 @@ public:
 #pragma region PBR
 	void generateCubemaps(vks::TextureCubeMap* source)
 	{
-		enum Target { IRRADIANCE = 0, PREFILTEREDENV = 1 };
+		enum Target { IRRADIANCE = 0, RADIANCE = 1 };
 
-		for (uint32_t target = 0; target < PREFILTEREDENV + 1; target++) {
+		for (uint32_t target = 0; target < RADIANCE + 1; target++) {
 
 			vks::TextureCubeMap* cubemap = new vks::TextureCubeMap();
 
@@ -448,7 +451,7 @@ public:
 				format = VK_FORMAT_R32G32B32A32_SFLOAT;
 				dim = 64;
 				break;
-			case PREFILTEREDENV:
+			case RADIANCE:
 				format = VK_FORMAT_R16G16B16A16_SFLOAT;
 				dim = 512;
 				break;
@@ -512,7 +515,7 @@ public:
 				VkImage image;
 				VkImageView view;
 				VkDeviceMemory memory;
-			} offscreen;
+			} offscreen{};
 
 			// Create offscreen framebuffer
 			{
@@ -623,7 +626,7 @@ public:
 			case IRRADIANCE:
 				pushConstantRange.size = sizeof(PushBlockIrradiance);
 				break;
-			case PREFILTEREDENV:
+			case RADIANCE:
 				pushConstantRange.size = sizeof(PushBlockPrefilterEnv);
 				break;
 			};
@@ -642,7 +645,7 @@ public:
 			case IRRADIANCE:
 				fragmentShader = "filtercube_irradiance.frag.hlsl";
 				break;
-			case PREFILTEREDENV:
+			case RADIANCE:
 				fragmentShader = "filtercube_radiance.frag.hlsl";
 				break;
 			};
@@ -728,42 +731,30 @@ public:
 			subresourceRange.levelCount = numMips;
 			subresourceRange.layerCount = 6;
 
+			cb->begin();
 			// Change image layout for all cubemap faces to transfer destination
-			{
-				cb->begin();
-				VkImageMemoryBarrier imageMemoryBarrier{};
-				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrier.image = cubemap->image;
-				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-				imageMemoryBarrier.srcAccessMask = 0;
-				imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrier.subresourceRange = subresourceRange;
-				vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-				cb->end();
-				cb->oneTimeSubmit(queue);
-			}
+			cb->insertImageMemoryBarrier({
+				.srcAccessMask = 0,
+				.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				.image = cubemap->image,
+				.subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount =  numMips, .layerCount = 6 }
+				}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 
 			for (uint32_t m = 0; m < numMips; m++) {
 				for (uint32_t f = 0; f < 6; f++) {
-
-					cb->begin();
-					{
-						VkImageMemoryBarrier imageMemoryBarrier{};
-						imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-						imageMemoryBarrier.image = offscreen.image;
-						imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-						imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-						imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-						imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-						imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-						vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-					}
-
-					cb->beginRendering(renderingInfo);
-
 					glm::vec2 viewport = glm::vec2(static_cast<float>(dim * std::pow(0.5f, m)), static_cast<float>(dim * std::pow(0.5f, m)));
 
+					cb->insertImageMemoryBarrier({
+						.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+						.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+						.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+						.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+						.image = offscreen.image,
+						.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+						}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+					cb->beginRendering(renderingInfo);
 					cb->setViewport(0, 0, viewport.x, viewport.y, 0.0f, 1.0f);
 					cb->setScissor(0, 0, static_cast<uint32_t>(viewport.x), static_cast<uint32_t>(viewport.y));
 					
@@ -773,7 +764,7 @@ public:
 						pushBlockIrradiance.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
 						vkCmdPushConstants(cb->handle, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockIrradiance), &pushBlockIrradiance);
 						break;
-					case PREFILTEREDENV:
+					case RADIANCE:
 						pushBlockPrefilterEnv.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
 						pushBlockPrefilterEnv.roughness = (float)m / (float)(numMips - 1);
 						vkCmdPushConstants(cb->handle, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockPrefilterEnv), &pushBlockPrefilterEnv);
@@ -781,75 +772,58 @@ public:
 					};
 
 					vkCmdBindPipeline(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
-					vkCmdBindDescriptorSets(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset, 0, NULL);
-
-					VkDeviceSize offsets[1] = { 0 };
-
+					vkCmdBindDescriptorSets(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset, 0, nullptr);
 					assetManager->models["crate"]->draw(cb->handle, pipelinelayout, glm::mat4(1.0f), true);
 
 					cb->endRendering();
 
-					VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-					subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					subresourceRange.baseMipLevel = 0;
-					subresourceRange.levelCount = numMips;
-					subresourceRange.layerCount = 6;
+					VkImageSubresourceRange subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = numMips };
 
 					// Copy region for transfer from framebuffer to cube face
-					VkImageCopy copyRegion{};
-
-					copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					copyRegion.srcSubresource.baseArrayLayer = 0;
-					copyRegion.srcSubresource.mipLevel = 0;
-					copyRegion.srcSubresource.layerCount = 1;
-					copyRegion.srcOffset = { 0, 0, 0 };
-
-					copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					copyRegion.dstSubresource.baseArrayLayer = f;
-					copyRegion.dstSubresource.mipLevel = m;
-					copyRegion.dstSubresource.layerCount = 1;
-					copyRegion.dstOffset = { 0, 0, 0 };
-
-					copyRegion.extent.width = static_cast<uint32_t>(viewport.x);
-					copyRegion.extent.height = static_cast<uint32_t>(viewport.y);
-					copyRegion.extent.depth = 1;
-
+					VkImageCopy copyRegion = {
+						.srcSubresource = {
+							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+							.mipLevel = 0,
+							.baseArrayLayer = 0,
+							.layerCount = 1
+						},
+						.srcOffset = { 0, 0, 0 },
+						.dstSubresource = {
+							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+							.mipLevel = m,
+							.baseArrayLayer = f,
+							.layerCount = 1
+						},
+						.dstOffset = { 0, 0, 0 },
+						.extent = {
+							.width = static_cast<uint32_t>(viewport.x),
+							.height = static_cast<uint32_t>(viewport.y),
+							.depth = 1
+}
+					};
 					vkCmdCopyImage(cb->handle, offscreen.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
-
-					{
-						VkImageMemoryBarrier imageMemoryBarrier{};
-						imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-						imageMemoryBarrier.image = offscreen.image;
-						imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-						imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-						imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-						imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-						imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-						vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-					}
-
-					cb->end();
-					cb->oneTimeSubmit(queue);
+					cb->insertImageMemoryBarrier({
+						.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
+						.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+						.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+						.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+						.image = offscreen.image,
+						.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+						}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 				}
 			}
 
-			{
-				// @todo: why separate cb?
-				cb->begin();
-				VkImageMemoryBarrier imageMemoryBarrier{};
-				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrier.image = cubemap->image;
-				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrier.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-				imageMemoryBarrier.subresourceRange = subresourceRange;
-				vkCmdPipelineBarrier(cb->handle, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-				cb->end();
-				cb->oneTimeSubmit(queue);
-			}
-
+			cb->insertImageMemoryBarrier({
+				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+				.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+				.image = cubemap->image,
+				.subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = numMips, .layerCount = 6 }
+				}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+			cb->end();
+			cb->oneTimeSubmit(queue);
 
 			vkFreeMemory(device->logicalDevice, offscreen.memory, nullptr);
 			vkDestroyImageView(device->logicalDevice, offscreen.view, nullptr);
@@ -866,7 +840,7 @@ public:
 			case IRRADIANCE:
 				skybox.irradianceIndex = assetManager->add("skybox_irradiance", cubemap);
 				break;
-			case PREFILTEREDENV:
+			case RADIANCE:
 				skybox.radianceIndex = assetManager->add("skybox_radiance", cubemap);
 				break;
 			};
@@ -968,11 +942,10 @@ public:
 		//cb->draw(3, 1, 0, 0);
 
 		// @todo: push consts also used by gltf renderer
-		struct PushConstBlock {
-			glm::mat4 mat;
-			uint32_t textureIndex;
-		} pushConstBlock{};
+		PushConstBlock pushConstBlock{};
 		pushConstBlock.textureIndex = skyboxIndex;
+		//pushConstBlock.irradianceIndex = skybox.irradianceIndex;
+		//pushConstBlock.radianceIndex = skybox.radianceIndex;
 
 		// @todo
 		cb->bindPipeline(pipelines["skybox"]);
@@ -981,6 +954,9 @@ public:
 		assetManager->models["crate"]->draw(cb->handle, glTFPipelineLayout->handle, glm::mat4(1.0f), true);
 
 		// @todo
+		vkglTF::pushConstBlock.irradianceIndex = skybox.irradianceIndex;
+		vkglTF::pushConstBlock.radianceIndex = skybox.radianceIndex;
+
 		cb->bindDescriptorSets(glTFPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
 		
 		//glm::vec3 currPos = { 0.0f, 8.0f, -30.0f }; //playerShip.localPosition;// +glm::vec3(0.0f, 0.0f, -playerShip.acceleration * 2.0f);

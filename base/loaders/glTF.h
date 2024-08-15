@@ -75,9 +75,13 @@ namespace vkglTF
 
 	// @todo: add additional material parameters and image indices
 	struct PushConstBlock {
-		glm::mat4 mat;
+		glm::mat4 matrix;
 		uint32_t textureIndex;
+		uint32_t radianceIndex;
+		uint32_t irradianceIndex;
 	};
+
+	extern PushConstBlock pushConstBlock;
 
 	struct Node;
 

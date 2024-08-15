@@ -17,6 +17,8 @@
 
 namespace vkglTF
 {
+	PushConstBlock pushConstBlock{};
+
 	bool loadImageDataFunc(tinygltf::Image* image, const int imageIndex, std::string* error, std::string* warning, int req_width, int req_height, const unsigned char* bytes, int size, void* userData)
 	{
 		// KTX files will be handled by our own code
@@ -964,11 +966,10 @@ namespace vkglTF
 				
 				// Material setup can explicitly be skipped if e.g. used for non standard glTF display
 				if (!skipMaterials) {
-					PushConstBlock pushConstBlock{};
-					pushConstBlock.mat = nodeMatrix;
-					pushConstBlock.mat[1][1] *= -1.0;
-					pushConstBlock.mat[2][2] *= -1.0;
-					pushConstBlock.mat = matrix * pushConstBlock.mat;
+					pushConstBlock.matrix = nodeMatrix;
+					pushConstBlock.matrix[1][1] *= -1.0;
+					pushConstBlock.matrix[2][2] *= -1.0;
+					pushConstBlock.matrix = matrix * pushConstBlock.matrix;
 					// @todo: different textures (base, normal, etc.)
 					pushConstBlock.textureIndex = primitive->material.baseColorTexture->assetIndex;
 					// Pass the final matrix to the vertex shader using push constants
