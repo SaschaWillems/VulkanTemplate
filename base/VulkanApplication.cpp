@@ -1064,6 +1064,11 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	case WM_LBUTTONDOWN:
 		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
 		mouseButtons.left = true;
+		// @todo: move to camera func
+		if (!camera.mouse.dragging) {
+			camera.mouse.dragCursorPos = mousePos;
+		};
+		camera.mouse.dragging = true;
 		break;
 	case WM_RBUTTONDOWN:
 		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
@@ -1075,6 +1080,7 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		break;
 	case WM_LBUTTONUP:
 		mouseButtons.left = false;
+		camera.mouse.dragging = false;
 		break;
 	case WM_RBUTTONUP:
 		mouseButtons.right = false;

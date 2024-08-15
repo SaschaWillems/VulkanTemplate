@@ -232,7 +232,7 @@ public:
 					acceleration = camUp * moveSpeed;
 				}
 
-				float rollSpeed = rotationSpeed * 0.025f;
+				float rollSpeed = rotationSpeed * 0.005f;
 				if (keys.rollLeft) {
 					angularAcceleration.z = -rollSpeed;
 				}
@@ -240,7 +240,6 @@ public:
 					angularAcceleration.z = rollSpeed;
 				}
 
-				//if (mouse.buttons.left) {
 				if (mouse.dragging) {
 					float rotateSpeed = rotationSpeed * 0.0025f;
 					glm::vec2 delta = glm::normalize(mouse.cursorPos - mouse.dragCursorPos);

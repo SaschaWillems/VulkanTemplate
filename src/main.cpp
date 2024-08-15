@@ -1016,8 +1016,11 @@ public:
 	void render() {
 		ZoneScoped;
 
+		camera.viewportSize = glm::uvec2(width, height);
 		//pship.setOrientation(10.0f, 5.0f, 2.5f, 1.0f);
 
+		camera.mouse.buttons.left = mouseButtons.left;
+		camera.mouse.cursorPos = mousePos;
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
@@ -1072,6 +1075,9 @@ public:
 
 	virtual void keyPressed(uint32_t key)
 	{
+		if (key == KEY_P) {
+			camera.physicsBased = !camera.physicsBased;
+		}
 	}
 
 };
