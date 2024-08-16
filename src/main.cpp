@@ -57,7 +57,15 @@ const float zFar = 1024.0f * 8.0f;
 vks::Frustum frustum;
 uint32_t visibleObjects{ 0 };
 
+struct PushConstBlock {
+	glm::mat4 matrix;
+	uint32_t textureIndex;
+	uint32_t radianceIndex;
+	uint32_t irradianceIndex;
+} pushConstBlock;
+
 struct Skybox {
+	uint32_t brdfLUT{ 0 };
 	uint32_t radianceIndex{ 0 };
 	uint32_t irradianceIndex{ 0 };
 } skybox;
@@ -144,6 +152,14 @@ public:
 			//.filename = getAssetPath() + "textures/cubemap01.ktx",
 			//.format = VK_FORMAT_R8G8B8A8_SRGB,
 			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+		}));
+
+		skybox.brdfLUT = assetManager->add("brdflut", new vks::Texture2D({
+			.filename = getAssetPath() + "textures/brdflut.ktx",
+			.format = VK_FORMAT_R8G8B8A8_SRGB,
 			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
@@ -444,7 +460,7 @@ public:
 			auto tStart = std::chrono::high_resolution_clock::now();
 
 			VkFormat format;
-			int32_t dim;
+			uint32_t dim;
 
 			switch (target) {
 			case IRRADIANCE:
@@ -511,99 +527,43 @@ public:
 			samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 			VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCI, nullptr, &cubemap->sampler));
 
-			struct Offscreen {
-				VkImage image;
-				VkImageView view;
-				VkDeviceMemory memory;
-			} offscreen{};
-
 			// Create offscreen framebuffer
-			{
-				// Image
-				VkImageCreateInfo imageCI = vks::initializers::imageCreateInfo();
-				imageCI.imageType = VK_IMAGE_TYPE_2D;
-				imageCI.format = format;
-				imageCI.extent.width = dim;
-				imageCI.extent.height = dim;
-				imageCI.extent.depth = 1;
-				imageCI.mipLevels = 1;
-				imageCI.arrayLayers = 1;
-				imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
-				imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
-				imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-				imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-				VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCI, nullptr, &offscreen.image));
-				VkMemoryRequirements memReqs;
-				vkGetImageMemoryRequirements(device->logicalDevice, offscreen.image, &memReqs);
-				VkMemoryAllocateInfo memAllocInfo{};
-				memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-				memAllocInfo.allocationSize = memReqs.size;
-				memAllocInfo.memoryTypeIndex = device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-				VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &offscreen.memory));
-				VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, offscreen.image, offscreen.memory, 0));
+			Image* offscreen = new Image({
+				.name = "Offscreen cubemap generation image",
+				.type = VK_IMAGE_TYPE_2D,
+				.format = format,
+				.extent = {
+					.width = dim,
+					.height = dim,
+					.depth = 1 
+				},
+				.tiling = VK_IMAGE_TILING_OPTIMAL,
+				.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+			});
 
-				// View
-				VkImageViewCreateInfo viewCI = vks::initializers::imageViewCreateInfo();
-				viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-				viewCI.format = format;
-				viewCI.subresourceRange = {};
-				viewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				viewCI.subresourceRange.baseMipLevel = 0;
-				viewCI.subresourceRange.levelCount = 1;
-				viewCI.subresourceRange.baseArrayLayer = 0;
-				viewCI.subresourceRange.layerCount = 1;
-				viewCI.image = offscreen.image;
-				VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCI, nullptr, &offscreen.view));
-
-				VkCommandBuffer layoutCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-				VkImageMemoryBarrier imageMemoryBarrier{};
-				imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				imageMemoryBarrier.image = offscreen.image;
-				imageMemoryBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				imageMemoryBarrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-				imageMemoryBarrier.srcAccessMask = 0;
-				imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-				imageMemoryBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-				vkCmdPipelineBarrier(layoutCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
-				vulkanDevice->flushCommandBuffer(layoutCmd, queue, true);
-			}
+			ImageView* offscreenView = new ImageView(offscreen);
 
 			// Descriptors
-			VkDescriptorSetLayout descriptorsetlayout;
-			VkDescriptorSetLayoutBinding setLayoutBinding = { 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr };
-			VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
-			descriptorSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-			descriptorSetLayoutCI.pBindings = &setLayoutBinding;
-			descriptorSetLayoutCI.bindingCount = 1;
-			VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorSetLayoutCI, nullptr, &descriptorsetlayout));
+			DescriptorPool* descriptorPool = new DescriptorPool({
+				.maxSets = 1,
+				.poolSizes = {
+					{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 },
+				}
+			});
 
-			// Descriptor Pool
-			VkDescriptorPoolSize poolSize = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
-			VkDescriptorPoolCreateInfo descriptorPoolCI{};
-			descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-			descriptorPoolCI.poolSizeCount = 1;
-			descriptorPoolCI.pPoolSizes = &poolSize;
-			descriptorPoolCI.maxSets = 2;
-			VkDescriptorPool descriptorpool;
-			VK_CHECK_RESULT(vkCreateDescriptorPool(device->logicalDevice, &descriptorPoolCI, nullptr, &descriptorpool));
+			DescriptorSetLayout* descriptorSetLayout = new DescriptorSetLayout({
+				.bindings = {
+					{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
+				}
+			});
 
-			// Descriptor sets
-			VkDescriptorSet descriptorset;
-			VkDescriptorSetAllocateInfo descriptorSetAllocInfo{};
-			descriptorSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-			descriptorSetAllocInfo.descriptorPool = descriptorpool;
-			descriptorSetAllocInfo.pSetLayouts = &descriptorsetlayout;
-			descriptorSetAllocInfo.descriptorSetCount = 1;
-			VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &descriptorSetAllocInfo, &descriptorset));
-			VkWriteDescriptorSet writeDescriptorSet{};
-			writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writeDescriptorSet.descriptorCount = 1;
-			writeDescriptorSet.dstSet = descriptorset;
-			writeDescriptorSet.dstBinding = 0;
-			writeDescriptorSet.pImageInfo = &source->descriptor;
-			vkUpdateDescriptorSets(device->logicalDevice, 1, &writeDescriptorSet, 0, nullptr);
+			DescriptorSet* descriptorSet = new DescriptorSet({
+				.pool = descriptorPool,
+				.layouts = { descriptorSetLayout->handle },
+				.descriptors = {
+					{.dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &source->descriptor }
+				}
+			});
 
 			struct PushBlockIrradiance {
 				glm::mat4 mvp;
@@ -617,38 +577,16 @@ public:
 				uint32_t numSamples = 32u;
 			} pushBlockPrefilterEnv;
 
-			// Pipeline layout
-			VkPipelineLayout pipelinelayout;
-			VkPushConstantRange pushConstantRange{};
-			pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-			switch (target) {
-			case IRRADIANCE:
-				pushConstantRange.size = sizeof(PushBlockIrradiance);
-				break;
-			case RADIANCE:
-				pushConstantRange.size = sizeof(PushBlockPrefilterEnv);
-				break;
-			};
-
-			VkPipelineLayoutCreateInfo pipelineLayoutCI{};
-			pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-			pipelineLayoutCI.setLayoutCount = 1;
-			pipelineLayoutCI.pSetLayouts = &descriptorsetlayout;
-			pipelineLayoutCI.pushConstantRangeCount = 1;
-			pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-			VK_CHECK_RESULT(vkCreatePipelineLayout(device->logicalDevice, &pipelineLayoutCI, nullptr, &pipelinelayout));
+			const uint32_t pushConstSize = static_cast<uint32_t>((target == IRRADIANCE ? sizeof(PushBlockIrradiance) : sizeof(PushBlockPrefilterEnv)));
+			PipelineLayout* pipelineLayout = new PipelineLayout({
+				.layouts = { descriptorSetLayout->handle },
+				.pushConstantRanges = {
+					{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = pushConstSize }
+				}
+			});
 
 			std::string vertexShader = "filtercube.vert.hlsl";
-			std::string fragmentShader;
-			switch (target) {
-			case IRRADIANCE:
-				fragmentShader = "filtercube_irradiance.frag.hlsl";
-				break;
-			case RADIANCE:
-				fragmentShader = "filtercube_radiance.frag.hlsl";
-				break;
-			};
+			std::string fragmentShader = (target == IRRADIANCE ? "filtercube_irradiance.frag.hlsl" : "filtercube_radiance.frag.hlsl");
 
 			// Pipeline
 			Pipeline* pipeline = new Pipeline({
@@ -657,7 +595,7 @@ public:
 					getAssetPath() + "shaders/" + fragmentShader
 				},
 				.cache = pipelineCache,
-				.layout = pipelinelayout,
+				.layout = pipelineLayout->handle,
 				.vertexInput = vkglTF::vertexInput,
 				.inputAssemblyState = {
 					.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
@@ -697,13 +635,14 @@ public:
 			});
 
 
-			VkRenderingAttachmentInfo colorAttachment{};
-			colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
-			colorAttachment.imageView = offscreen.view;
-			colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
-			colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			colorAttachment.clearValue.color = { 0.0f, 0.0f, 0.0f, 0.0f };
+			VkRenderingAttachmentInfo colorAttachment = {
+				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+				.imageView = offscreenView->handle,
+				.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+				.clearValue = { .color = { 0.0f, 0.0f, 0.0f, 0.0f } }
+			};
 
 			VkRenderingInfo renderingInfo = {
 				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
@@ -714,7 +653,7 @@ public:
 			};
 
 			// Render cubemap
-			std::vector<glm::mat4> matrices = {
+			const std::vector<glm::mat4> matrices = {
 				glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
 				glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
 				glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
@@ -725,13 +664,16 @@ public:
 
 			CommandBuffer* cb = new CommandBuffer({ .device = *vulkanDevice, .pool = commandPool });
 
-			VkImageSubresourceRange subresourceRange{};
-			subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			subresourceRange.baseMipLevel = 0;
-			subresourceRange.levelCount = numMips;
-			subresourceRange.layerCount = 6;
-
 			cb->begin();
+			// Initial transition for offscreen image
+			cb->insertImageMemoryBarrier({
+				.srcAccessMask = 0,
+				.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+				.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+				.image = offscreen->handle,
+				.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
+				}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 			// Change image layout for all cubemap faces to transfer destination
 			cb->insertImageMemoryBarrier({
 				.srcAccessMask = 0,
@@ -751,7 +693,7 @@ public:
 						.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 						.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-						.image = offscreen.image,
+						.image = offscreen->handle,
 						.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
 						}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 					cb->beginRendering(renderingInfo);
@@ -762,18 +704,18 @@ public:
 					switch (target) {
 					case IRRADIANCE:
 						pushBlockIrradiance.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
-						vkCmdPushConstants(cb->handle, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockIrradiance), &pushBlockIrradiance);
+						cb->updatePushConstant(pipelineLayout, 0, &pushBlockIrradiance);
 						break;
 					case RADIANCE:
 						pushBlockPrefilterEnv.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
 						pushBlockPrefilterEnv.roughness = (float)m / (float)(numMips - 1);
-						vkCmdPushConstants(cb->handle, pipelinelayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlockPrefilterEnv), &pushBlockPrefilterEnv);
+						cb->updatePushConstant(pipelineLayout, 0, &pushBlockPrefilterEnv);
 						break;
 					};
 
-					vkCmdBindPipeline(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, *pipeline);
-					vkCmdBindDescriptorSets(cb->handle, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelinelayout, 0, 1, &descriptorset, 0, nullptr);
-					assetManager->models["crate"]->draw(cb->handle, pipelinelayout, glm::mat4(1.0f), true);
+					cb->bindPipeline(pipeline);
+					cb->bindDescriptorSets(pipelineLayout, { descriptorSet });
+					assetManager->models["crate"]->draw(cb->handle, pipelineLayout->handle, glm::mat4(1.0f), true);
 
 					cb->endRendering();
 
@@ -801,14 +743,14 @@ public:
 							.depth = 1
 }
 					};
-					vkCmdCopyImage(cb->handle, offscreen.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+					vkCmdCopyImage(cb->handle, offscreen->handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
 					cb->insertImageMemoryBarrier({
 						.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
 						.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 						.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 						.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-						.image = offscreen.image,
+						.image = offscreen->handle,
 						.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
 						}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 				}
@@ -825,13 +767,6 @@ public:
 			cb->end();
 			cb->oneTimeSubmit(queue);
 
-			vkFreeMemory(device->logicalDevice, offscreen.memory, nullptr);
-			vkDestroyImageView(device->logicalDevice, offscreen.view, nullptr);
-			vkDestroyImage(device->logicalDevice, offscreen.image, nullptr);
-			vkDestroyDescriptorPool(device->logicalDevice, descriptorpool, nullptr);
-			vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorsetlayout, nullptr);
-			vkDestroyPipelineLayout(device->logicalDevice, pipelinelayout, nullptr);
-
 			cubemap->descriptor.imageView = cubemap->view;
 			cubemap->descriptor.sampler = cubemap->sampler;
 			cubemap->descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -847,6 +782,12 @@ public:
 
 			delete cb;
 			delete pipeline;
+			delete pipelineLayout;
+			delete descriptorPool;
+			delete descriptorSetLayout;
+			delete descriptorSet;
+			delete offscreen;
+			delete offscreenView;
 
 			auto tEnd = std::chrono::high_resolution_clock::now();
 			auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();

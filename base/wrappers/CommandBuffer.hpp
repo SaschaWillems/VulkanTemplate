@@ -91,6 +91,7 @@ public:
 	}
 	void insertImageMemoryBarrier(VkImageMemoryBarrier barrier, VkPipelineStageFlags srcStageMask, VkPipelineStageFlags dstStageMask)
 	{
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		vkCmdPipelineBarrier(this->handle, srcStageMask, dstStageMask, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 	}
 	void beginRendering(VkRenderingInfo& renderingInfo)
