@@ -285,8 +285,9 @@ namespace vkglTF
 		Model(ModelCreateInfo createInfo);
 		~Model();
 
+		void bindBuffers(VkCommandBuffer commandBuffer);
 		void drawNode(Node* node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false);
-		void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false);
+		void draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials = false, bool bindBuffers = false);
 		void getSceneDimensions();
 		void updateAnimation(uint32_t index, float time);
 		Node* findNode(Node* parent, uint32_t index);

@@ -715,7 +715,7 @@ public:
 
 					cb->bindPipeline(pipeline);
 					cb->bindDescriptorSets(pipelineLayout, { descriptorSet });
-					assetManager->models["crate"]->draw(cb->handle, pipelineLayout->handle, glm::mat4(1.0f), true);
+					assetManager->models["crate"]->draw(cb->handle, pipelineLayout->handle, glm::mat4(1.0f), true, true);
 
 					cb->endRendering();
 
@@ -892,7 +892,7 @@ public:
 		cb->bindPipeline(pipelines["skybox"]);
 		cb->bindDescriptorSets(skyboxPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
 		cb->updatePushConstant(skyboxPipelineLayout, 0, &pushConstBlock);
-		assetManager->models["crate"]->draw(cb->handle, glTFPipelineLayout->handle, glm::mat4(1.0f), true);
+		assetManager->models["crate"]->draw(cb->handle, glTFPipelineLayout->handle, glm::mat4(1.0f), true, true);
 
 		// @todo
 		vkglTF::pushConstBlock.irradianceIndex = skybox.irradianceIndex;
@@ -906,22 +906,26 @@ public:
 		// actorManager->actors["playership"]->position = camera.position * glm::vec3(-1.0f);
 		// cb->bindPipeline(pipelines["playership"]);
 		// ship->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
-
+		
 		cb->bindPipeline(pipelines["gltf"]);
 		
+		vkglTF::Model* lastBoundModel{ nullptr };
+
 		// Only draw asteroids for now
 		visibleObjects = 0;
+		auto modelChanges = 0;
 		for (auto& it : actorManager->actors) {
-			if (it.second->tag != "asteroid") {
-				continue;
-			}
-			auto asteroid = it.second;
-			if (frustum.checkSphere(asteroid->position, asteroid->getRadius())) {
+			auto actor = it.second;
+			if (frustum.checkSphere(actor->position, actor->getRadius())) {
+				if (actor->model != lastBoundModel) {
+					lastBoundModel = actor->model;
+					actor->model->bindBuffers(cb->handle);
+					modelChanges++;
+				}
 				visibleObjects++;
-				glm::mat4 locMatrix = asteroid->getMatrix();
-				asteroid->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
+				glm::mat4 locMatrix = actor->getMatrix();
+				lastBoundModel->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
 			}
-
 		}
 
 		if (overlay->visible) {

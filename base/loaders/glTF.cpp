@@ -952,6 +952,13 @@ namespace vkglTF
 		freeResources();
 	}
 
+	void Model::bindBuffers(VkCommandBuffer commandBuffer)
+	{
+		const VkDeviceSize offsets[1] = { 0 };
+		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices->buffer, offsets);
+		vkCmdBindIndexBuffer(commandBuffer, indices->buffer, 0, VK_INDEX_TYPE_UINT32);
+	}
+
 	void Model::drawNode(Node *node, VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials)
 	{
 		if (node->mesh) {
@@ -984,11 +991,11 @@ namespace vkglTF
 		}
 	}
 
-	void Model::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials)
+	void Model::draw(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout, glm::mat4 matrix, bool skipMaterials, bool bindBuffers)
 	{
-		const VkDeviceSize offsets[1] = { 0 };
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices->buffer, offsets);
-		vkCmdBindIndexBuffer(commandBuffer, indices->buffer, 0, VK_INDEX_TYPE_UINT32);
+		if (bindBuffers) {
+			this->bindBuffers(commandBuffer);
+		}
 		for (auto& node : nodes) {
 			drawNode(node, commandBuffer, pipelineLayout, matrix, skipMaterials);
 		}
