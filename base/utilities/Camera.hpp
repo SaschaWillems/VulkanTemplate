@@ -241,8 +241,8 @@ public:
 				}
 
 				if (mouse.dragging) {
-					float rotateSpeed = rotationSpeed * 0.0025f;
-					glm::vec2 delta = glm::normalize(mouse.cursorPos - mouse.dragCursorPos);
+					float rotateSpeed = rotationSpeed * deltaTime * 0.0025f;
+					glm::vec2 delta = (mouse.cursorPos - mouse.dragCursorPos);
 					if (abs(glm::length(delta)) > 0.1f) {
 						angularAcceleration.x = -delta.y * rotateSpeed;
 						angularAcceleration.y = delta.x * rotateSpeed;
@@ -267,26 +267,28 @@ public:
 				rotation *= glm::angleAxis(angularVelocity.z, camForward);
 			}
 			else {
+				float movementSpeed = moveSpeed * deltaTime * 300.0f;
+
 				if (keys.forward) {
-					position += camForward * moveSpeed;
+					position += camForward * movementSpeed;
 				}
 				if (keys.backward) {
-					position += camForward * -moveSpeed;
+					position += camForward * -movementSpeed;
 				}
 				if (keys.left) {
-					position += camRight * -moveSpeed;
+					position += camRight * -movementSpeed;
 				}
 				if (keys.right) {
-					position += camRight * moveSpeed;
+					position += camRight * movementSpeed;
 				}
 				if (keys.up) {
-					position += camUp * -moveSpeed;
+					position += camUp * -movementSpeed;
 				}
 				if (keys.down) {
-					position += camUp * moveSpeed;
+					position += camUp * movementSpeed;
 				}
 
-				float rollSpeed = rotationSpeed * 0.01f;
+				float rollSpeed = rotationSpeed * deltaTime * 0.5f;
 				if (keys.rollLeft) {
 					rotation *= glm::angleAxis(-rollSpeed, camForward);
 				}
@@ -295,8 +297,8 @@ public:
 				}
 
 				if (mouse.buttons.left) {
-					float rotateSpeed = rotationSpeed * 0.01f;
-					glm::vec2 delta = glm::normalize(mouse.cursorPos - mouse.dragCursorPos);
+					float rotateSpeed = rotationSpeed * deltaTime * 0.005f;
+					glm::vec2 delta = mouse.cursorPos - mouse.dragCursorPos;
 					if (abs(glm::length(delta)) > 0.1f) {
 						rotation *= glm::angleAxis(delta.x * rotateSpeed, axis.positiveY);
 						rotation *= glm::angleAxis(-delta.y * rotateSpeed, camRight);
