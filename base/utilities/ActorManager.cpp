@@ -44,6 +44,11 @@ void Actor::move(const glm::vec3 dir, float deltaT)
 	//	position += glm::normalize(glm::cross(camFront, glm::vec3(0.0f, 1.0f, 0.0f))) * moveSpeed;
 }
 
+void Actor::update(float deltaTime)
+{
+	position = position + constantVelocity * deltaTime;
+}
+
 glm::mat4 Actor::getMatrix() const
 {
 	const glm::mat4 t = glm::translate(glm::mat4(1.0f), position);

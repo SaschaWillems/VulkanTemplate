@@ -131,7 +131,8 @@ public:
 		const std::map<std::string, std::string> files = {
 			{ "crate", "models/crate_up.glb" },
 			{ "asteroid", "models/asteroid.glb" },
-			{ "spaceship", "models/spaceship/scene_ktx.gltf" }
+			{ "spaceship", "models/spaceship/scene_ktx.gltf" },
+			{ "bullet", "models/bullet.glb" }
 		};
 
 		// @todo: from JSON?
@@ -400,6 +401,7 @@ public:
 		ship = actorManager->addActor("playership", new Actor({
 			.position = glm::vec3(0.0f),
 			.rotation = glm::vec3(0.0f),
+			.scale = glm::vec3(0.5f),
 			.model = assetManager->models["spaceship"]
 		}));
 
@@ -408,7 +410,6 @@ public:
 			.rotation = glm::vec3(0.0f),
 			.scale = glm::vec3(0.5f),
 			.model = assetManager->models["crate"],
-			.tag = "asteroid"
 		}));
 
 		// Set up a grid of asteroids for testing purposes
@@ -512,8 +513,6 @@ public:
 			viewCI.image = cubemap->image;
 			VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCI, nullptr, &cubemap->view));
 
-			// Sampler
-			// @todo: still required?
 			VkSamplerCreateInfo samplerCI = vks::initializers::samplerCreateInfo();
 			samplerCI.magFilter = VK_FILTER_LINEAR;
 			samplerCI.minFilter = VK_FILTER_LINEAR;
@@ -634,7 +633,6 @@ public:
 				.enableHotReload = false
 			});
 
-
 			VkRenderingAttachmentInfo colorAttachment = {
 				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
 				.imageView = offscreenView->handle,
@@ -719,8 +717,6 @@ public:
 
 					cb->endRendering();
 
-					VkImageSubresourceRange subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = numMips };
-
 					// Copy region for transfer from framebuffer to cube face
 					VkImageCopy copyRegion = {
 						.srcSubresource = {
@@ -801,11 +797,9 @@ public:
 	{
 		ZoneScopedN("Command buffer recording");
 
-		CommandBuffer* commandBuffer = frame.commandBuffer;
-
 		const bool multiSampling = (settings.sampleCount > VK_SAMPLE_COUNT_1_BIT);
 
-		CommandBuffer* cb = commandBuffer;
+		CommandBuffer* cb = frame.commandBuffer;
 		cb->begin();
 
 		// New structures are used to define the attachments used in dynamic rendering
@@ -872,23 +866,12 @@ public:
 		};
 
 		cb->beginRendering(renderingInfo);
-		// Use negative viewport height to simplify asset related things
 		cb->setViewport(0.0f, 0.0f, (float)width, (float)height, 0.0f, 1.0f);
-//		cb->setViewport(0.0f, (float)height, (float)width, -(float)height, 0.0f, 1.0f);
 		cb->setScissor(0, 0, width, height);
 
-		//cb->bindPipeline(testPipeline);
-		//cb->bindDescriptorSets(testPipelineLayout, { frame.descriptorSet });
-		// @todo
-		//cb->draw(3, 1, 0, 0);
-
-		// @todo: push consts also used by gltf renderer
+		// Backdrop
 		PushConstBlock pushConstBlock{};
 		pushConstBlock.textureIndex = skyboxIndex;
-		//pushConstBlock.irradianceIndex = skybox.irradianceIndex;
-		//pushConstBlock.radianceIndex = skybox.radianceIndex;
-
-		// @todo
 		cb->bindPipeline(pipelines["skybox"]);
 		cb->bindDescriptorSets(skyboxPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
 		cb->updatePushConstant(skyboxPipelineLayout, 0, &pushConstBlock);
@@ -910,8 +893,6 @@ public:
 		cb->bindPipeline(pipelines["gltf"]);
 		
 		vkglTF::Model* lastBoundModel{ nullptr };
-
-		// Only draw asteroids for now
 		visibleObjects = 0;
 		auto modelChanges = 0;
 		for (auto& it : actorManager->actors) {
@@ -952,8 +933,6 @@ public:
 
 		camera.viewportSize = glm::uvec2(width, height);
 
-		//pship.setOrientation(10.0f, 5.0f, 2.5f, 1.0f);
-
 		camera.mouse.buttons.left = mouseButtons.left;
 		camera.mouse.cursorPos = mousePos;
 
@@ -968,6 +947,10 @@ public:
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
 
 		frustum.update(camera.matrices.perspective * camera.matrices.view);
+
+		for (auto& it : actorManager->actors) {
+			it.second->update(frameTimer);
+		}
 
 		recordCommandBuffer(currentFrame);
 		VulkanApplication::submitFrame(currentFrame);
@@ -1001,7 +984,6 @@ public:
 			if (std::find(pipelineList.begin(), pipelineList.end(), owner) != pipelineList.end()) {
 				static_cast<Pipeline*>(owner)->wantsReload = true;
 			}
-			// @todo
 			for (auto& it : assetManager->models) {
 				if (it.second == owner) {
 					static_cast<vkglTF::Model*>(owner)->wantsReload = true;
@@ -1014,6 +996,17 @@ public:
 	{
 		if (key == KEY_P) {
 			camera.physicsBased = !camera.physicsBased;
+		}
+		if (key == 0x43) {
+			// @todo: test
+			actorManager->addActor("bullet" + std::to_string(actorManager->actors.size() + 1), new Actor({
+				.position = glm::vec3(camera.position),
+				.rotation = glm::vec3(0.0f),
+				.scale = glm::vec3(0.5f),
+				.model = assetManager->models["bullet"],
+				.tag = "bullet",
+				.constantVelocity = glm::vec3(camera.getForward()) * 50.0f
+			}));
 		}
 	}
 
