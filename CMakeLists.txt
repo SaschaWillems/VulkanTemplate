@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
+include(FetchContent)
+
 set(NAME VulkanTemplate)
 
 project(${NAME})
@@ -13,6 +15,9 @@ include_directories(external/tinygltf)
 include_directories(external/volk)
 include_directories(external/dxc)
 include_directories(external/tracy)
+include_directories(external/ktx/include)
+include_directories(external/ktx/other_include)
+include_directories(external/ktx/lib)
 include_directories(base)
 include_directories(base/utilities)
 include_directories(base/wrappers)
@@ -82,7 +87,28 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 
 add_subdirectory(base)
 add_subdirectory(src)
-add_subdirectory(external)
+# add_subdirectory(external)
 add_subdirectory(data\\shaders)
 
-target_link_libraries(VulkanTemplate ${CMAKE_CURRENT_SOURCE_DIR}/libs/dxcompiler.lib)
+# SFML
+set(SFML_VERSION "2.6.1")
+
+FetchContent_Declare(
+    sfml
+    GIT_REPOSITORY "https://github.com/SFML/SFML.git"
+    GIT_TAG        "${SFML_VERSION}"
+)
+
+FetchContent_GetProperties(sfml)
+if(NOT sfml_POPULATED)
+    FetchContent_Populate(sfml)
+    add_subdirectory(${sfml_SOURCE_DIR} ${sfml_BINARY_DIR})
+endif()
+
+target_link_libraries(VulkanTemplate
+	${CMAKE_CURRENT_SOURCE_DIR}/libs/dxcompiler.lib
+	sfml-audio
+	sfml-graphics
+	sfml-system
+	sfml-window	
+)
