@@ -213,7 +213,7 @@ public:
 #if defined(_WIN32)
 	void setupConsole(std::string title);
 	void setupDPIAwareness();
-	HWND setupWindow(HINSTANCE hinstance, WNDPROC wndproc);
+	void setupWindow();
 	void handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	static int32_t handleAppInput(struct android_app* app, AInputEvent* event);
