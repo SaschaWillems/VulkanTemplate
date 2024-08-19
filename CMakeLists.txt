@@ -90,25 +90,6 @@ add_subdirectory(src)
 # add_subdirectory(external)
 add_subdirectory(data\\shaders)
 
-# SFML
-set(SFML_VERSION "2.6.1")
-
-FetchContent_Declare(
-    sfml
-    GIT_REPOSITORY "https://github.com/SFML/SFML.git"
-    GIT_TAG        "${SFML_VERSION}"
-)
-
-FetchContent_GetProperties(sfml)
-if(NOT sfml_POPULATED)
-    FetchContent_Populate(sfml)
-    add_subdirectory(${sfml_SOURCE_DIR} ${sfml_BINARY_DIR})
-endif()
-
 target_link_libraries(VulkanTemplate
 	${CMAKE_CURRENT_SOURCE_DIR}/libs/dxcompiler.lib
-	sfml-audio
-	sfml-graphics
-	sfml-system
-	sfml-window	
 )
