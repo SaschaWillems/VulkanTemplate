@@ -994,10 +994,10 @@ public:
 
 	virtual void keyPressed(uint32_t key)
 	{
-		if (key == KEY_P) {
+		if (key == sf::Keyboard::P) {
 			camera.physicsBased = !camera.physicsBased;
 		}
-		if (key == 0x43) {
+		if (key == sf::Keyboard::Space) {
 			// @todo: test
 			actorManager->addActor("bullet" + std::to_string(actorManager->actors.size() + 1), new Actor({
 				.position = glm::vec3(camera.position),

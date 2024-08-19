@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <SFML/Window/Keyboard.hpp>
 
 class Camera
 {
@@ -213,30 +214,30 @@ public:
 			acceleration = angularAcceleration = glm::vec3(0.0f);
 
 			if (physicsBased) {
-				if (keys.forward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) {
 					acceleration = camForward * moveSpeed;
 				}
-				if (keys.backward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
 					acceleration = camForward * -moveSpeed;
 				}
-				if (keys.left) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
 					acceleration = camRight * -moveSpeed;
 				}
-				if (keys.right) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
 					acceleration = camRight * moveSpeed;
 				}
-				if (keys.up) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
 					acceleration = camUp * -moveSpeed;
 				}
-				if (keys.down) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)) {
 					acceleration = camUp * moveSpeed;
 				}
 
 				float rollSpeed = rotationSpeed * 0.005f;
-				if (keys.rollLeft) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
 					angularAcceleration.z = -rollSpeed;
 				}
-				if (keys.rollRight) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
 					angularAcceleration.z = rollSpeed;
 				}
 

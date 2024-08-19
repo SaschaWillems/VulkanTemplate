@@ -235,21 +235,39 @@ void VulkanApplication::renderLoop()
 	destHeight = height;
 	lastTimestamp = std::chrono::high_resolution_clock::now();
 #if defined(_WIN32)
-	MSG msg;
-	bool quitMessageReceived = false;
-	while (!quitMessageReceived) {
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-			if (msg.message == WM_QUIT) {
-				quitMessageReceived = true;
-				break;
+	while (window->isOpen()) {
+		sf::Event event;
+		while (window->pollEvent(event))
+		{
+			if (event.type == sf::Event::Closed) {
+				window->close();
+				return;
+			}
+			if (event.type == sf::Event::KeyPressed) {
+				keyPressed(event.key.code);
 			}
 		}
-		if (prepared && !IsIconic(window)) {
+		if (prepared) {
 			nextFrame();
 		}
 	}
+	MSG msg;
+	//bool quitMessageReceived = false;
+	//while (!quitMessageReceived) {
+	//	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+	//		TranslateMessage(&msg);
+	//		DispatchMessage(&msg);
+	//		if (msg.message == WM_QUIT) {
+	//			quitMessageReceived = true;
+	//			break;
+	//		}
+	//	}
+	//	// @todo:
+	//	//if (prepared && !IsIconic(window)) {
+	//	if (prepared) {
+	//		nextFrame();
+	//	}
+	//}
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	while (1)
 	{
@@ -858,6 +876,7 @@ void VulkanApplication::setupDPIAwareness()
 
 HWND VulkanApplication::setupWindow(HINSTANCE hinstance, WNDPROC wndproc)
 {
+	/*
 	this->windowInstance = hinstance;
 
 	WNDCLASSEX wndClass;
@@ -968,10 +987,16 @@ HWND VulkanApplication::setupWindow(HINSTANCE hinstance, WNDPROC wndproc)
 	SetFocus(window);
 
 	return window;
+	*/
+	
+	window = new sf::WindowBase(sf::VideoMode(width, height), "SFML window with Vulkan", sf::Style::Default);
+	window->setTitle("Vulkan Template");
+	return 0;
 }
 
 void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	/*
 	switch (uMsg)
 	{
 	case WM_CLOSE:
@@ -1119,6 +1144,7 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		break;
 	}
 	//camera.keys.shift = (GetKeyState(VK_SHIFT) & 0x8000);
+	*/
 }
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 int32_t VulkanApplication::handleAppInput(struct android_app* app, AInputEvent* event)
@@ -2067,7 +2093,7 @@ void VulkanApplication::windowResized()
 void VulkanApplication::initSwapchain()
 {
 #if defined(_WIN32)
-	swapChain->initSurface(windowInstance, window);
+	swapChain->initSurface(window);
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)	
 	swapChain->initSurface(androidApp->window);
 #elif (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK))

@@ -60,6 +60,8 @@
 #include "tracy/Tracy.hpp"
 #include "tracy/TracyVulkan.hpp"
 
+#include <SFML/Window.hpp>
+
 struct VulkanFrameObjects
 {
 	CommandBuffer* commandBuffer;
@@ -158,10 +160,12 @@ public:
 		bool middle = false;
 	} mouseButtons;
 
+	sf::WindowBase* window{ nullptr };
+
 	// OS specific 
 #if defined(_WIN32)
-	HWND window;
-	HINSTANCE windowInstance;
+	//HWND window;
+	//HINSTANCE windowInstance;
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	// true if application has focused, false if moved to background
 	bool focused = false;
