@@ -112,6 +112,7 @@ public:
 	struct Mouse {
 		struct Buttons {
 			bool left;
+			bool right;
 		} buttons;
 		glm::vec2 cursorPos;
 		bool dragging = false;
@@ -270,30 +271,30 @@ public:
 			else {
 				float movementSpeed = moveSpeed * deltaTime * 300.0f;
 
-				if (keys.forward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) {
 					position += camForward * movementSpeed;
 				}
-				if (keys.backward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
 					position += camForward * -movementSpeed;
 				}
-				if (keys.left) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
 					position += camRight * -movementSpeed;
 				}
-				if (keys.right) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
 					position += camRight * movementSpeed;
 				}
-				if (keys.up) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
 					position += camUp * -movementSpeed;
 				}
-				if (keys.down) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)) {
 					position += camUp * movementSpeed;
 				}
 
 				float rollSpeed = rotationSpeed * deltaTime * 0.5f;
-				if (keys.rollLeft) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
 					rotation *= glm::angleAxis(-rollSpeed, camForward);
 				}
-				if (keys.rollRight) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
 					rotation *= glm::angleAxis(rollSpeed, camForward);
 				}
 

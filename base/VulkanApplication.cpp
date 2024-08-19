@@ -246,28 +246,41 @@ void VulkanApplication::renderLoop()
 			if (event.type == sf::Event::KeyPressed) {
 				keyPressed(event.key.code);
 			}
+			if (event.type == sf::Event::MouseButtonPressed) {
+				switch (event.mouseButton.button) {
+					case sf::Mouse::Left:
+						camera.mouse.buttons.left = true;
+						break;
+					case sf::Mouse::Right:
+						camera.mouse.buttons.right = true;
+						break;
+				}
+			}
+			if (event.type == sf::Event::MouseButtonReleased) {
+				switch (event.mouseButton.button) {
+				case sf::Mouse::Left:
+					camera.mouse.buttons.left = false;
+					camera.mouse.dragging = false;
+					break;
+				case sf::Mouse::Right:
+					camera.mouse.buttons.right = false;
+					break;
+				}
+			}
 		}
+		auto mPos = sf::Mouse::getPosition(*window);
+		mousePos = glm::vec2((float)mPos.x, (float)mPos.y);
+		// @todo: move to camera func
+		if (camera.mouse.buttons.left && !camera.mouse.dragging) {
+			camera.mouse.dragCursorPos = mousePos;
+			camera.mouse.dragging = true;
+		};
+
 		if (prepared) {
+			// @todo: minimized
 			nextFrame();
 		}
 	}
-	MSG msg;
-	//bool quitMessageReceived = false;
-	//while (!quitMessageReceived) {
-	//	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-	//		TranslateMessage(&msg);
-	//		DispatchMessage(&msg);
-	//		if (msg.message == WM_QUIT) {
-	//			quitMessageReceived = true;
-	//			break;
-	//		}
-	//	}
-	//	// @todo:
-	//	//if (prepared && !IsIconic(window)) {
-	//	if (prepared) {
-	//		nextFrame();
-	//	}
-	//}
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	while (1)
 	{
@@ -1007,85 +1020,6 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	case WM_PAINT:
 		ValidateRect(window, NULL);
 		break;
-	case WM_KEYDOWN:
-		switch (wParam)
-		{
-		case KEY_P:
-			paused = !paused;
-			break;
-		case KEY_F1:
-			overlay->visible = !overlay->visible;
-			break;
-		case KEY_ESCAPE:
-			PostQuitMessage(0);
-			break;
-		}
-
-		if (camera.firstperson)
-		{
-			switch (wParam)
-			{
-			case KEY_W:
-				camera.keys.forward = true;
-				break;
-			case KEY_S:
-				camera.keys.backward = true;
-				break;
-			case KEY_A:
-				camera.keys.left = true;
-				break;
-			case KEY_D:
-				camera.keys.right = true;
-				break;
-			case 0x51:
-				camera.keys.rollLeft = true;
-				break;
-			case 0x45:
-				camera.keys.rollRight = true;
-				break;
-			case KEY_SPACE:
-				camera.keys.up = true;
-				break;
-			case VK_CONTROL:
-				camera.keys.down = true;
-				break;
-			}
-		}
-
-		keyPressed((uint32_t)wParam);
-		break;
-	case WM_KEYUP:
-		if (camera.firstperson)
-		{
-			switch (wParam)
-			{
-			case KEY_W:
-				camera.keys.forward = false;
-				break;
-			case KEY_S:
-				camera.keys.backward = false;
-				break;
-			case KEY_A:
-				camera.keys.left = false;
-				break;
-			case KEY_D:
-				camera.keys.right = false;
-				break;
-			case 0x51:
-				camera.keys.rollLeft = false;
-				break;
-			case 0x45:
-				camera.keys.rollRight = false;
-				break;
-			case KEY_SPACE:
-				camera.keys.up = false;
-				break;
-			case VK_CONTROL:
-				camera.keys.down = false;
-				break;
-			}
-		}
-		break;
 	case WM_LBUTTONDOWN:
 		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
 		mouseButtons.left = true;
@@ -1113,13 +1047,6 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	case WM_MBUTTONUP:
 		mouseButtons.middle = false;
 		break;
-	case WM_MOUSEWHEEL:
-	{
-		short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-		camera.translate(glm::vec3(0.0f, 0.0f, (float)wheelDelta * 0.005f * zoomSpeed));
-		viewUpdated = true;
-		break;
-	}
 	case WM_MOUSEMOVE:
 	{
 		handleMouseMove(LOWORD(lParam), HIWORD(lParam));
@@ -1136,14 +1063,6 @@ void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			}
 		}
 		break;
-	case WM_ENTERSIZEMOVE:
-		resizing = true;
-		break;
-	case WM_EXITSIZEMOVE:
-		resizing = false;
-		break;
-	}
-	//camera.keys.shift = (GetKeyState(VK_SHIFT) & 0x8000);
 	*/
 }
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
