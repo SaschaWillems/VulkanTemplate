@@ -9,6 +9,7 @@
 #include "FileWatcher.hpp"
 #include <VulkanApplication.h>
 #include "AssetManager.h"
+#include "AudioManager.h"
 #include "Texture.hpp"
 #include "glTF.h"
 #include <glm/gtc/type_ptr.hpp>
@@ -17,6 +18,7 @@
 #include <random>
 #include "time.h"
 #include "Frustum.hpp"
+#include <SFML/Audio.hpp>
 
 // @todo: audio (music and sfx)
 // @todo: sync2 everywhere
@@ -50,6 +52,7 @@ uint32_t skyboxIndex{ 0 };
 
 ActorManager* actorManager{ nullptr };
 AssetManager* assetManager{ nullptr };
+AudioManager* audioManager{ nullptr };
 Actor* ship{ nullptr };
 
 const float zFar = 1024.0f * 8.0f;
@@ -85,6 +88,7 @@ private:
 	DescriptorSetLayout* descriptorSetLayoutTextures;
 	DescriptorSet* descriptorSetTextures;
 	std::unordered_map<std::string, Pipeline*> pipelines;
+	sf::Music backgroundMusic;
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -104,6 +108,7 @@ public:
 
 		assetManager = new AssetManager();
 		actorManager = new ActorManager();
+		audioManager = new AudioManager();
 
 		ApplicationContext::assetManager = assetManager;
 
@@ -125,6 +130,12 @@ public:
 		delete descriptorSetLayout;
 		delete assetManager;
 		delete actorManager;
+
+		// @todo: move to manager class
+		if (backgroundMusic.Playing) {
+			backgroundMusic.stop();
+		}
+		delete audioManager;
 	}
 
 	void loadAssets() {
@@ -165,6 +176,15 @@ public:
 			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
 			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
 		}));
+
+		// Audio
+		const std::map<std::string, std::string> soundFiles = {
+			{ "laser", "sounds/laser1.mp3" }
+		};
+
+		for (auto& it : soundFiles) {
+			audioManager->AddSoundFile(it.first, getAssetPath() + it.second);
+		}
 	}
 
 	void prepare() {
@@ -446,6 +466,13 @@ public:
 		};
 		fileWatcher->start();
 
+		// @todo
+		if (backgroundMusic.openFromFile(getAssetPath() + "music/singularity_calm.mp3")) {
+			backgroundMusic.setVolume(30);
+			backgroundMusic.play();
+		} else {
+			std::cout << "Could not load background music track\n";
+		}
 		prepared = true;
 	}
 
@@ -1007,6 +1034,7 @@ public:
 				.tag = "bullet",
 				.constantVelocity = glm::vec3(camera.getForward()) * 50.0f
 			}));
+			audioManager->PlaySnd("laser");
 		}
 	}
 
@@ -1034,7 +1062,7 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
 	};
 	vulkanApplication = new Application();
 	vulkanApplication->initVulkan();
-	vulkanApplication->setupWindow(hInstance, WndProc);
+	vulkanApplication->setupWindow();
 	vulkanApplication->prepare();
 	vulkanApplication->renderLoop();
 	delete(vulkanApplication);
