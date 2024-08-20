@@ -74,9 +74,9 @@ namespace vks
 		
 		inline bool checkSphere(glm::vec3 pos, float radius)
 		{
-			for (auto i = 0; i < 6; i++)
+			for (size_t i = 0; i < 6; i++)
 			{
-				if (glm::dot(planes[0], glm::vec4(pos, 1.0f)) <= -radius)
+				if ((planes[i].x * pos.x) + (planes[i].y * pos.y) + (planes[i].z * pos.z) + planes[i].w <= -radius)
 				{
 					return false;
 				}
