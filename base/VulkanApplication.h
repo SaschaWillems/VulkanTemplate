@@ -163,10 +163,7 @@ public:
 	sf::WindowBase* window{ nullptr };
 
 	// OS specific 
-#if defined(_WIN32)
-	//HWND window;
-	//HINSTANCE windowInstance;
-#elif defined(VK_USE_PLATFORM_ANDROID_KHR)
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	// true if application has focused, false if moved to background
 	bool focused = false;
 	struct TouchPos {
@@ -214,7 +211,6 @@ public:
 	void setupConsole(std::string title);
 	void setupDPIAwareness();
 	void setupWindow();
-	void handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	static int32_t handleAppInput(struct android_app* app, AInputEvent* event);
 	static void handleAppCommand(android_app* app, int32_t cmd);

@@ -889,68 +889,10 @@ void VulkanApplication::setupDPIAwareness()
 
 void VulkanApplication::setupWindow()
 {
-	window = new sf::WindowBase(sf::VideoMode(width, height), "SFML window with Vulkan", sf::Style::Fullscreen);
-	window->setTitle("Vulkan Template");
+	window = new sf::WindowBase(sf::VideoMode(width, height), "SFML window with Vulkan", settings.fullscreen ? sf::Style::Fullscreen : sf::Style::Default);
+	window->setTitle(windowTitle);
 }
 
-void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	/*
-	switch (uMsg)
-	{
-	case WM_CLOSE:
-		prepared = false;
-		DestroyWindow(hWnd);
-		PostQuitMessage(0);
-		break;
-	case WM_PAINT:
-		ValidateRect(window, NULL);
-		break;
-	case WM_LBUTTONDOWN:
-		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
-		mouseButtons.left = true;
-		// @todo: move to camera func
-		if (!camera.mouse.dragging) {
-			camera.mouse.dragCursorPos = mousePos;
-		};
-		camera.mouse.dragging = true;
-		break;
-	case WM_RBUTTONDOWN:
-		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
-		mouseButtons.right = true;
-		break;
-	case WM_MBUTTONDOWN:
-		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
-		mouseButtons.middle = true;
-		break;
-	case WM_LBUTTONUP:
-		mouseButtons.left = false;
-		camera.mouse.dragging = false;
-		break;
-	case WM_RBUTTONUP:
-		mouseButtons.right = false;
-		break;
-	case WM_MBUTTONUP:
-		mouseButtons.middle = false;
-		break;
-	case WM_MOUSEMOVE:
-	{
-		handleMouseMove(LOWORD(lParam), HIWORD(lParam));
-		break;
-	}
-	case WM_SIZE:
-		if ((prepared) && (wParam != SIZE_MINIMIZED))
-		{
-			if ((resizing) || ((wParam == SIZE_MAXIMIZED) || (wParam == SIZE_RESTORED)))
-			{
-				destWidth = LOWORD(lParam);
-				destHeight = HIWORD(lParam);
-				windowResize();
-			}
-		}
-		break;
-	*/
-}
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 int32_t VulkanApplication::handleAppInput(struct android_app* app, AInputEvent* event)
 {
