@@ -6,7 +6,7 @@ Personal Vulkan Template based on my sample base class, but with several changes
 
 **Note:** Not guaranteed to work
 
-Includes
+Uses
 - glm
 - ktx
 - imgui
@@ -14,6 +14,7 @@ Includes
 - volk
 - dxc
 - tracy
+- sfml
 
 Functionality
 - dynamic rendering
