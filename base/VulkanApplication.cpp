@@ -235,18 +235,52 @@ void VulkanApplication::renderLoop()
 	destHeight = height;
 	lastTimestamp = std::chrono::high_resolution_clock::now();
 #if defined(_WIN32)
-	MSG msg;
-	bool quitMessageReceived = false;
-	while (!quitMessageReceived) {
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-			if (msg.message == WM_QUIT) {
-				quitMessageReceived = true;
-				break;
+	while (window->isOpen()) {
+		sf::Event event;
+		while (window->pollEvent(event))
+		{
+			if (event.type == sf::Event::Closed) {
+				window->close();
+				return;
+			}
+			if (event.type == sf::Event::KeyPressed) {
+				if (event.key.code == sf::Keyboard::F1) {
+					overlay->visible = !overlay->visible;
+				}
+				keyPressed(event.key.code);
+			}
+			if (event.type == sf::Event::MouseButtonPressed) {
+				switch (event.mouseButton.button) {
+					case sf::Mouse::Left:
+						camera.mouse.buttons.left = true;
+						break;
+					case sf::Mouse::Right:
+						camera.mouse.buttons.right = true;
+						break;
+				}
+			}
+			if (event.type == sf::Event::MouseButtonReleased) {
+				switch (event.mouseButton.button) {
+				case sf::Mouse::Left:
+					camera.mouse.buttons.left = false;
+					camera.mouse.dragging = false;
+					break;
+				case sf::Mouse::Right:
+					camera.mouse.buttons.right = false;
+					break;
+				}
 			}
 		}
-		if (prepared && !IsIconic(window)) {
+		auto mPos = sf::Mouse::getPosition(*window);
+		mousePos = glm::vec2((float)mPos.x, (float)mPos.y);
+		// @todo: move to camera func
+		if (camera.mouse.buttons.left && !camera.mouse.dragging) {
+			camera.mouse.dragCursorPos = mousePos;
+			camera.mouse.dragging = true;
+		};
+
+		if (prepared) {
+			// @todo: minimized
 			nextFrame();
 		}
 	}
@@ -584,7 +618,7 @@ VulkanApplication::VulkanApplication()
 	commandLineParser.parse(args);
 	if (commandLineParser.isSet("help")) {
 #if defined(_WIN32)
-		setupConsole("Vulkan Template");
+		setupConsole(windowTitle);
 #endif
 		commandLineParser.printHelp();
 		std::cin.get();
@@ -856,270 +890,12 @@ void VulkanApplication::setupDPIAwareness()
 	}
 }
 
-HWND VulkanApplication::setupWindow(HINSTANCE hinstance, WNDPROC wndproc)
+void VulkanApplication::setupWindow()
 {
-	this->windowInstance = hinstance;
-
-	WNDCLASSEX wndClass;
-
-	wndClass.cbSize = sizeof(WNDCLASSEX);
-	wndClass.style = CS_HREDRAW | CS_VREDRAW;
-	wndClass.lpfnWndProc = wndproc;
-	wndClass.cbClsExtra = 0;
-	wndClass.cbWndExtra = 0;
-	wndClass.hInstance = hinstance;
-	wndClass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-	wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wndClass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-	wndClass.lpszMenuName = NULL;
-	wndClass.lpszClassName = name.c_str();
-	wndClass.hIconSm = LoadIcon(NULL, IDI_WINLOGO);
-
-	if (!RegisterClassEx(&wndClass))
-	{
-		std::cout << "Could not register window class!\n";
-		fflush(stdout);
-		exit(1);
-	}
-
-	int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-	int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-
-	if (settings.fullscreen)
-	{
-		DEVMODE dmScreenSettings;
-		memset(&dmScreenSettings, 0, sizeof(dmScreenSettings));
-		dmScreenSettings.dmSize = sizeof(dmScreenSettings);
-		dmScreenSettings.dmPelsWidth = screenWidth;
-		dmScreenSettings.dmPelsHeight = screenHeight;
-		dmScreenSettings.dmBitsPerPel = 32;
-		dmScreenSettings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
-
-		if ((width != (uint32_t)screenWidth) && (height != (uint32_t)screenHeight))
-		{
-			if (ChangeDisplaySettings(&dmScreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL)
-			{
-				if (MessageBox(NULL, "Fullscreen Mode not supported!\n Switch to window mode?", "Error", MB_YESNO | MB_ICONEXCLAMATION) == IDYES)
-				{
-					settings.fullscreen = false;
-				}
-				else
-				{
-					return nullptr;
-				}
-			}
-		}
-
-	}
-
-	DWORD dwExStyle;
-	DWORD dwStyle;
-
-	if (settings.fullscreen)
-	{
-		dwExStyle = WS_EX_APPWINDOW;
-		dwStyle = WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
-	}
-	else
-	{
-		dwExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
-		dwStyle = WS_OVERLAPPEDWINDOW | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
-	}
-
-	RECT windowRect;
-	windowRect.left = 0L;
-	windowRect.top = 0L;
-	windowRect.right = settings.fullscreen ? (long)screenWidth : (long)width;
-	windowRect.bottom = settings.fullscreen ? (long)screenHeight : (long)height;
-
-	AdjustWindowRectEx(&windowRect, dwStyle, FALSE, dwExStyle);
-
-	window = CreateWindowEx(0,
-		name.c_str(),
-		windowTitle.c_str(),
-		dwStyle | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
-		0,
-		0,
-		windowRect.right - windowRect.left,
-		windowRect.bottom - windowRect.top,
-		NULL,
-		NULL,
-		hinstance,
-		NULL);
-
-	if (!settings.fullscreen)
-	{
-		// Center on screen
-		uint32_t x = (GetSystemMetrics(SM_CXSCREEN) - windowRect.right) / 2;
-		uint32_t y = (GetSystemMetrics(SM_CYSCREEN) - windowRect.bottom) / 2;
-		SetWindowPos(window, 0, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
-	}
-
-	if (!window)
-	{
-		printf("Could not create window!\n");
-		fflush(stdout);
-		return nullptr;
-		exit(1);
-	}
-
-	ShowWindow(window, SW_SHOW);
-	SetForegroundWindow(window);
-	SetFocus(window);
-
-	return window;
+	window = new sf::WindowBase(sf::VideoMode(width, height), "SFML window with Vulkan", settings.fullscreen ? sf::Style::Fullscreen : sf::Style::Default);
+	window->setTitle(windowTitle);
 }
 
-void VulkanApplication::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	switch (uMsg)
-	{
-	case WM_CLOSE:
-		prepared = false;
-		DestroyWindow(hWnd);
-		PostQuitMessage(0);
-		break;
-	case WM_PAINT:
-		ValidateRect(window, NULL);
-		break;
-	case WM_KEYDOWN:
-		switch (wParam)
-		{
-		case KEY_P:
-			paused = !paused;
-			break;
-		case KEY_F1:
-			overlay->visible = !overlay->visible;
-			break;
-		case KEY_ESCAPE:
-			PostQuitMessage(0);
-			break;
-		}
-
-		if (camera.firstperson)
-		{
-			switch (wParam)
-			{
-			case KEY_W:
-				camera.keys.forward = true;
-				break;
-			case KEY_S:
-				camera.keys.backward = true;
-				break;
-			case KEY_A:
-				camera.keys.left = true;
-				break;
-			case KEY_D:
-				camera.keys.right = true;
-				break;
-			case 0x51:
-				camera.keys.rollLeft = true;
-				break;
-			case 0x45:
-				camera.keys.rollRight = true;
-				break;
-			case KEY_SPACE:
-				camera.keys.up = true;
-				break;
-			case VK_CONTROL:
-				camera.keys.down = true;
-				break;
-			}
-		}
-
-		keyPressed((uint32_t)wParam);
-		break;
-	case WM_KEYUP:
-		if (camera.firstperson)
-		{
-			switch (wParam)
-			{
-			case KEY_W:
-				camera.keys.forward = false;
-				break;
-			case KEY_S:
-				camera.keys.backward = false;
-				break;
-			case KEY_A:
-				camera.keys.left = false;
-				break;
-			case KEY_D:
-				camera.keys.right = false;
-				break;
-			case 0x51:
-				camera.keys.rollLeft = false;
-				break;
-			case 0x45:
-				camera.keys.rollRight = false;
-				break;
-			case KEY_SPACE:
-				camera.keys.up = false;
-				break;
-			case VK_CONTROL:
-				camera.keys.down = false;
-				break;
-			}
-		}
-		break;
-	case WM_LBUTTONDOWN:
-		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
-		mouseButtons.left = true;
-		// @todo: move to camera func
-		if (!camera.mouse.dragging) {
-			camera.mouse.dragCursorPos = mousePos;
-		};
-		camera.mouse.dragging = true;
-		break;
-	case WM_RBUTTONDOWN:
-		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
-		mouseButtons.right = true;
-		break;
-	case WM_MBUTTONDOWN:
-		mousePos = glm::vec2((float)LOWORD(lParam), (float)HIWORD(lParam));
-		mouseButtons.middle = true;
-		break;
-	case WM_LBUTTONUP:
-		mouseButtons.left = false;
-		camera.mouse.dragging = false;
-		break;
-	case WM_RBUTTONUP:
-		mouseButtons.right = false;
-		break;
-	case WM_MBUTTONUP:
-		mouseButtons.middle = false;
-		break;
-	case WM_MOUSEWHEEL:
-	{
-		short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-		camera.translate(glm::vec3(0.0f, 0.0f, (float)wheelDelta * 0.005f * zoomSpeed));
-		viewUpdated = true;
-		break;
-	}
-	case WM_MOUSEMOVE:
-	{
-		handleMouseMove(LOWORD(lParam), HIWORD(lParam));
-		break;
-	}
-	case WM_SIZE:
-		if ((prepared) && (wParam != SIZE_MINIMIZED))
-		{
-			if ((resizing) || ((wParam == SIZE_MAXIMIZED) || (wParam == SIZE_RESTORED)))
-			{
-				destWidth = LOWORD(lParam);
-				destHeight = HIWORD(lParam);
-				windowResize();
-			}
-		}
-		break;
-	case WM_ENTERSIZEMOVE:
-		resizing = true;
-		break;
-	case WM_EXITSIZEMOVE:
-		resizing = false;
-		break;
-	}
-	//camera.keys.shift = (GetKeyState(VK_SHIFT) & 0x8000);
-}
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 int32_t VulkanApplication::handleAppInput(struct android_app* app, AInputEvent* event)
 {
@@ -2067,7 +1843,7 @@ void VulkanApplication::windowResized()
 void VulkanApplication::initSwapchain()
 {
 #if defined(_WIN32)
-	swapChain->initSurface(windowInstance, window);
+	swapChain->initSurface(window);
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)	
 	swapChain->initSurface(androidApp->window);
 #elif (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK))

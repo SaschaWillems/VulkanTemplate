@@ -15,7 +15,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <vector>
-
+#include <SFML/Window.hpp>
 #include "volk.h"
 #include "VulkanTools.h"
 
@@ -70,7 +70,8 @@ public:
 
 	/** @brief Creates the platform specific surface abstraction of the native platform window used for presentation */	
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
-	void initSurface(void* platformHandle, void* platformWindow)
+	void initSurface(sf::WindowBase* window)
+//		void initSurface(void* platformHandle, void* platformWindow)
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	void initSurface(ANativeWindow* window)
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
@@ -87,11 +88,17 @@ public:
 
 		// Create the os-specific surface
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
+		/*
 		VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {};
 		surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
 		surfaceCreateInfo.hinstance = (HINSTANCE)platformHandle;
 		surfaceCreateInfo.hwnd = (HWND)platformWindow;
 		err = vkCreateWin32SurfaceKHR(instance, &surfaceCreateInfo, nullptr, &surface);
+		*/
+		bool res = window->createVulkanSurface(instance, surface);
+		if (!res) {
+			// @todo
+		}
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 		VkAndroidSurfaceCreateInfoKHR surfaceCreateInfo = {};
 		surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;

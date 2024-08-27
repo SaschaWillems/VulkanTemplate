@@ -60,6 +60,8 @@
 #include "tracy/Tracy.hpp"
 #include "tracy/TracyVulkan.hpp"
 
+#include <SFML/Window.hpp>
+
 struct VulkanFrameObjects
 {
 	CommandBuffer* commandBuffer;
@@ -158,11 +160,10 @@ public:
 		bool middle = false;
 	} mouseButtons;
 
+	sf::WindowBase* window{ nullptr };
+
 	// OS specific 
-#if defined(_WIN32)
-	HWND window;
-	HINSTANCE windowInstance;
-#elif defined(VK_USE_PLATFORM_ANDROID_KHR)
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	// true if application has focused, false if moved to background
 	bool focused = false;
 	struct TouchPos {
@@ -209,8 +210,7 @@ public:
 #if defined(_WIN32)
 	void setupConsole(std::string title);
 	void setupDPIAwareness();
-	HWND setupWindow(HINSTANCE hinstance, WNDPROC wndproc);
-	void handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+	void setupWindow();
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 	static int32_t handleAppInput(struct android_app* app, AInputEvent* event);
 	static void handleAppCommand(android_app* app, int32_t cmd);

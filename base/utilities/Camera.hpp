@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <SFML/Window/Keyboard.hpp>
 
 class Camera
 {
@@ -111,6 +112,7 @@ public:
 	struct Mouse {
 		struct Buttons {
 			bool left;
+			bool right;
 		} buttons;
 		glm::vec2 cursorPos;
 		bool dragging = false;
@@ -213,30 +215,30 @@ public:
 			acceleration = angularAcceleration = glm::vec3(0.0f);
 
 			if (physicsBased) {
-				if (keys.forward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) {
 					acceleration = camForward * moveSpeed;
 				}
-				if (keys.backward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
 					acceleration = camForward * -moveSpeed;
 				}
-				if (keys.left) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
 					acceleration = camRight * -moveSpeed;
 				}
-				if (keys.right) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
 					acceleration = camRight * moveSpeed;
 				}
-				if (keys.up) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
 					acceleration = camUp * -moveSpeed;
 				}
-				if (keys.down) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)) {
 					acceleration = camUp * moveSpeed;
 				}
 
-				float rollSpeed = rotationSpeed * 0.005f;
-				if (keys.rollLeft) {
+				float rollSpeed = rotationSpeed * deltaTime * 0.5f;
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
 					angularAcceleration.z = -rollSpeed;
 				}
-				if (keys.rollRight) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
 					angularAcceleration.z = rollSpeed;
 				}
 
@@ -269,34 +271,34 @@ public:
 			else {
 				float movementSpeed = moveSpeed * deltaTime * 300.0f;
 
-				if (keys.forward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) {
 					position += camForward * movementSpeed;
 				}
-				if (keys.backward) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
 					position += camForward * -movementSpeed;
 				}
-				if (keys.left) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
 					position += camRight * -movementSpeed;
 				}
-				if (keys.right) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
 					position += camRight * movementSpeed;
 				}
-				if (keys.up) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
 					position += camUp * -movementSpeed;
 				}
-				if (keys.down) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::LControl)) {
 					position += camUp * movementSpeed;
 				}
 
 				float rollSpeed = rotationSpeed * deltaTime * 0.5f;
-				if (keys.rollLeft) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
 					rotation *= glm::angleAxis(-rollSpeed, camForward);
 				}
-				if (keys.rollRight) {
+				if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) {
 					rotation *= glm::angleAxis(rollSpeed, camForward);
 				}
 
-				if (mouse.buttons.left) {
+				if (mouse.dragging) {
 					float rotateSpeed = rotationSpeed * deltaTime * 0.005f;
 					glm::vec2 delta = mouse.cursorPos - mouse.dragCursorPos;
 					if (abs(glm::length(delta)) > 0.1f) {

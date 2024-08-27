@@ -27,13 +27,13 @@ struct VSOutput
 [[vk::location(0)]] float2 uv : TEXCOORD0;
 [[vk::location(1)]] float3 normal : NORMAL0;
 [[vk::location(2)]] float4 color : COLOR0;
-[[vk::location(3)]] float3 localpos : NORMAL1;
+[[vk::location(3)]] float3 worldpos : NORMAL1;
 };
 
 VSOutput main(VSInput input)
 {
 	VSOutput output = (VSOutput)0;
-	output.localpos = input.pos;
+    output.worldpos = mul(primitive.model, input.pos);
 	float4x4 modelView = mul(ubo.view, primitive.model);
 	output.pos = mul(ubo.projection, mul(modelView, float4(input.pos, 1.0)));
     output.uv = input.uv;
