@@ -244,6 +244,9 @@ void VulkanApplication::renderLoop()
 				return;
 			}
 			if (event.type == sf::Event::KeyPressed) {
+				if (event.key.code == sf::Keyboard::F1) {
+					overlay->visible = !overlay->visible;
+				}
 				keyPressed(event.key.code);
 			}
 			if (event.type == sf::Event::MouseButtonPressed) {
@@ -615,7 +618,7 @@ VulkanApplication::VulkanApplication()
 	commandLineParser.parse(args);
 	if (commandLineParser.isSet("help")) {
 #if defined(_WIN32)
-		setupConsole("Vulkan Template");
+		setupConsole(windowTitle);
 #endif
 		commandLineParser.printHelp();
 		std::cin.get();

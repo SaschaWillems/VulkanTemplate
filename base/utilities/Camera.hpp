@@ -234,7 +234,7 @@ public:
 					acceleration = camUp * moveSpeed;
 				}
 
-				float rollSpeed = rotationSpeed * 0.005f;
+				float rollSpeed = rotationSpeed * deltaTime * 0.5f;
 				if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) {
 					angularAcceleration.z = -rollSpeed;
 				}
@@ -298,7 +298,7 @@ public:
 					rotation *= glm::angleAxis(rollSpeed, camForward);
 				}
 
-				if (mouse.buttons.left) {
+				if (mouse.dragging) {
 					float rotateSpeed = rotationSpeed * deltaTime * 0.005f;
 					glm::vec2 delta = mouse.cursorPos - mouse.dragCursorPos;
 					if (abs(glm::length(delta)) > 0.1f) {

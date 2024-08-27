@@ -919,12 +919,13 @@ public:
 		
 		cb->bindPipeline(pipelines["gltf"]);
 		
+		// @todo: instancing
 		vkglTF::Model* lastBoundModel{ nullptr };
 		visibleObjects = 0;
 		auto modelChanges = 0;
 		for (auto& it : actorManager->actors) {
 			auto actor = it.second;
-			if (frustum.checkSphere(actor->position, actor->getRadius())) {
+			if (frustum.checkSphere(actor->position, actor->getRadius() * 2.0f)) {
 				if (actor->model != lastBoundModel) {
 					lastBoundModel = actor->model;
 					actor->model->bindBuffers(cb->handle);
