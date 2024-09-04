@@ -115,7 +115,9 @@ public:
 			bool right;
 		} buttons;
 		glm::vec2 cursorPos;
+		glm::vec2 cursorPosNDC;
 		bool dragging = false;
+		bool cursorLock = false;
 		glm::vec2 dragCursorPos;
 	} mouse{};
 
@@ -210,7 +212,7 @@ public:
 
 			//glm::vec3 camSide = glm::cross(camFront, camUp);
 
-			float moveSpeed = deltaTime * movementSpeed * 2.5f;
+			float moveSpeed = deltaTime * movementSpeed * 5.0f;
 
 			acceleration = angularAcceleration = glm::vec3(0.0f);
 
@@ -242,13 +244,40 @@ public:
 					angularAcceleration.z = rollSpeed;
 				}
 
-				if (mouse.dragging) {
-					float rotateSpeed = rotationSpeed * deltaTime * 0.0025f;
-					glm::vec2 delta = (mouse.cursorPos - mouse.dragCursorPos);
+				//if (mouse.dragging) {
+				//	float rotateSpeed = rotationSpeed * deltaTime * 0.0025f;
+				//	glm::vec2 delta = (mouse.cursorPos - mouse.dragCursorPos);
+				//	if (abs(glm::length(delta)) > 0.1f) {
+				//		angularAcceleration.x = -delta.y * rotateSpeed;
+				//		angularAcceleration.y = delta.x * rotateSpeed;
+				//	}
+				//}
+
+				if (mouse.cursorLock) {
+					float rotateSpeed = rotationSpeed * deltaTime * 1.0f;
+					glm::vec2 delta = mouse.cursorPosNDC - glm::vec2(0.5f, 0.5f);
 					if (abs(glm::length(delta)) > 0.1f) {
 						angularAcceleration.x = -delta.y * rotateSpeed;
 						angularAcceleration.y = delta.x * rotateSpeed;
 					}
+				}
+
+				//  @todo
+				const float maxVelocity = 0.01f;
+
+				if (angularVelocity.x > maxVelocity) {
+					angularVelocity.x = maxVelocity;
+				}
+				if (angularVelocity.y > maxVelocity) {
+					angularVelocity.y = maxVelocity;
+				}
+
+				//  @todo
+				if (angularVelocity.x < -maxVelocity) {
+					angularVelocity.x = -maxVelocity;
+				}
+				if (angularVelocity.y < -maxVelocity) {
+					angularVelocity.y = -maxVelocity;
 				}
 
 				// Integrate
@@ -298,9 +327,18 @@ public:
 					rotation *= glm::angleAxis(rollSpeed, camForward);
 				}
 
-				if (mouse.dragging) {
-					float rotateSpeed = rotationSpeed * deltaTime * 0.005f;
-					glm::vec2 delta = mouse.cursorPos - mouse.dragCursorPos;
+				//if (mouse.dragging) {
+				//	float rotateSpeed = rotationSpeed * deltaTime * 0.005f;
+				//	glm::vec2 delta = mouse.cursorPos - mouse.dragCursorPos;
+				//	if (abs(glm::length(delta)) > 0.1f) {
+				//		rotation *= glm::angleAxis(delta.x * rotateSpeed, axis.positiveY);
+				//		rotation *= glm::angleAxis(-delta.y * rotateSpeed, camRight);
+				//	}
+				//}
+
+				if (mouse.cursorLock) {
+					float rotateSpeed = rotationSpeed * deltaTime * 1.0f;
+					glm::vec2 delta = mouse.cursorPosNDC - glm::vec2(0.5f, 0.5f);
 					if (abs(glm::length(delta)) > 0.1f) {
 						rotation *= glm::angleAxis(delta.x * rotateSpeed, axis.positiveY);
 						rotation *= glm::angleAxis(-delta.y * rotateSpeed, camRight);
@@ -332,7 +370,7 @@ public:
 			camFront.z = cos(glm::radians(rotation.x)) * cos(glm::radians(rotation.y));
 			camFront = glm::normalize(camFront);
 
-			float moveSpeed = deltaTime * movementSpeed * 2.0f;
+			float moveSpeed = deltaTime * movementSpeed * 5.0f;
 			float rotSpeed = deltaTime * rotationSpeed * 50.0f;
 
 			// Move

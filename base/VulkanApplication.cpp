@@ -1,7 +1,7 @@
 /*
  * Vulkan Application base class
  *
- * Copyright (C) 2023 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2023-2024 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -200,6 +200,7 @@ void VulkanApplication::renderFrame()
 	frameTimer = (float)tDiff / 1000.0f;
 	camera.mouse.buttons.left = mouseButtons.left;
 	camera.mouse.cursorPos = mousePos;
+	camera.mouse.cursorPosNDC = mousePos / glm::vec2(float(width), float(height));
 	if (GetKeyState(VK_SHIFT) & 0x8000) {
 		camera.update(frameTimer * 2.5f);
 	} else {
