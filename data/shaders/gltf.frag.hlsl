@@ -44,7 +44,7 @@ float4 main(VSOutput input) : SV_TARGET
     //float4 ambient = cubemaps[pushConsts.irradianceIndex].Sample(samplerTexture, input.normal);
     
     float3 V = normalize(-input.worldpos);
-    float3 N = input.normal;
+    float3 N = normalize(input.normal);
     
     float3 F0 = (0.04).rrr;
     float roughness = 0.5;
@@ -52,11 +52,16 @@ float4 main(VSOutput input) : SV_TARGET
     float3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
     float3 kD = 1.0 - kS;
     float3 irradiance = cubemaps[pushConsts.irradianceIndex].Sample(samplerTexture, input.normal).rgb;
-    float3 diffuse = irradiance * albedo.rgb;
+    //float3 ambient = (0.5f).rrr;
+    //float3 diffuse = irradiance * albedo.rgb;
     
-    float ao = 25.0;
-    float3 ambient = (kD * diffuse) * ao;
+    float3 lightPos = float3(0.0, 0.0, 0.0);
+    float3 lightDir = normalize(lightPos - input.worldpos);
+    float3 diffuse = max(dot(N, lightDir), 0.0);
+        
+    float ao = 2.5;
+    float3 ambient = max(kD * diffuse, 0.1) * ao;       
 
-    //return float4(ambient, 1.0);
-    return albedo;
+    return float4((ambient + diffuse) * albedo.rgb, 1.0);
+    
 }

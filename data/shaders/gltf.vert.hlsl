@@ -33,11 +33,12 @@ struct VSOutput
 VSOutput main(VSInput input)
 {
 	VSOutput output = (VSOutput)0;
-    output.worldpos = mul(primitive.model, input.pos);
+    output.worldpos = mul(primitive.model, float4(input.pos, 1.0)).xyz;
 	float4x4 modelView = mul(ubo.view, primitive.model);
 	output.pos = mul(ubo.projection, mul(modelView, float4(input.pos, 1.0)));
     output.uv = input.uv;
-	output.normal = input.normal;
+	// Note: Only works with uniform scaling
+    output.normal = mul(primitive.model, input.normal);
 	output.color = input.color;
 	return output;
 }
