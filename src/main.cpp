@@ -89,6 +89,7 @@ private:
 	DescriptorSet* descriptorSetTextures;
 	std::unordered_map<std::string, Pipeline*> pipelines;
 	sf::Music backgroundMusic;
+	float firingTimer;
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -1050,6 +1051,23 @@ public:
 			}
 		}
 
+		// @todo
+		if (sf::Mouse::isButtonPressed(sf::Mouse::Left) && firingTimer <= 0.0f) {
+			// @todo: test
+			actorManager->addActor("bullet" + std::to_string(actorManager->actors.size() + 1), new Actor({
+				.position = glm::vec3(camera.position),
+				.rotation = glm::vec3(0.0f),
+				.scale = glm::vec3(0.5f),
+				.model = assetManager->models["bullet"],
+				.tag = "bullet",
+				// @todo: velocity from player ship
+				.constantVelocity = glm::vec3(camera.getForward()) * 100.0f
+				}));
+			audioManager->PlaySnd("laser");
+			firingTimer = 1.0f;
+		}
+		firingTimer -= frameTimer;
+
 		//time += frameTimer;
 	}
 
@@ -1080,18 +1098,6 @@ public:
 		}
 		if (key == sf::Keyboard::C) {
 			camera.mouse.cursorLock = !camera.mouse.cursorLock;
-		}
-		if (key == sf::Keyboard::Space) {
-			// @todo: test
-			actorManager->addActor("bullet" + std::to_string(actorManager->actors.size() + 1), new Actor({
-				.position = glm::vec3(camera.position),
-				.rotation = glm::vec3(0.0f),
-				.scale = glm::vec3(0.5f),
-				.model = assetManager->models["bullet"],
-				.tag = "bullet",
-				.constantVelocity = glm::vec3(camera.getForward()) * 50.0f
-			}));
-			audioManager->PlaySnd("laser");
 		}
 		if (key == sf::Keyboard::L) {
 			camera.mouse.cursorLock = !camera.mouse.cursorLock;

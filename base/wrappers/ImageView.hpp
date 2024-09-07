@@ -30,6 +30,8 @@ private:
 			return image->arrayLayers == 1 ? VK_IMAGE_VIEW_TYPE_2D : VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 		case VK_IMAGE_TYPE_3D:
 			return VK_IMAGE_VIEW_TYPE_3D;
+		default:
+			return VK_IMAGE_VIEW_TYPE_2D;
 		// @todo: cubemaps
 		}
 	}
