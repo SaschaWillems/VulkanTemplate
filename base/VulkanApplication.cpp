@@ -8,6 +8,11 @@
 
 #include "VulkanApplication.h"
 
+#undef VMA_DEDICATED_ALLOCATION 
+#undef VMA_BIND_MEMORY2
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 std::vector<const char*> VulkanApplication::args;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
@@ -153,6 +158,21 @@ void VulkanApplication::prepare()
 	}
 	else {
 		VulkanContext::copyQueue = queue;
+	}
+
+	// VMA
+	VmaVulkanFunctions vmaVulkanFns{};
+	vmaVulkanFns.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+	vmaVulkanFns.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+
+	VmaAllocatorCreateInfo vmaCI{};
+	vmaCI.physicalDevice = vulkanDevice->physicalDevice;
+	vmaCI.device = vulkanDevice->logicalDevice;
+	vmaCI.instance = instance;
+	vmaCI.vulkanApiVersion = apiVersion;
+	vmaCI.pVulkanFunctions = &vmaVulkanFns;
+	if (vmaCreateAllocator(&vmaCI, &VulkanContext::vmaAllocator) != VK_SUCCESS) {
+		throw std::runtime_error("Could not init Vulkan Memory Allocator");
 	}
 
 	initSwapchain();
@@ -696,7 +716,9 @@ VulkanApplication::~VulkanApplication()
 		}
 	}
 
+	vmaDestroyAllocator(VulkanContext::vmaAllocator);
 	vkDestroyInstance(instance, nullptr);
+
 
 #if defined(_DIRECT2DISPLAY)
 

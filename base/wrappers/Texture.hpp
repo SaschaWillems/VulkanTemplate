@@ -26,6 +26,8 @@
 #include <android/asset_manager.h>
 #endif
 
+#include "vk_mem_alloc.h"
+
 namespace vks
 {
 	struct TextureCreateInfo {
@@ -142,21 +144,17 @@ namespace vks
 			VkDeviceMemory stagingMemory;
 			VkBufferCreateInfo bufferCreateInfo = vks::initializers::bufferCreateInfo();
 			bufferCreateInfo.size = ktxTextureSize;
-			// This buffer is used as a transfer source for the buffer copy
 			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			VK_CHECK_RESULT(vkCreateBuffer(VulkanContext::device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
-			vkGetBufferMemoryRequirements(VulkanContext::device->logicalDevice, stagingBuffer, &memReqs);
-			memAllocInfo.allocationSize = memReqs.size;
-			memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-			VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
-			VK_CHECK_RESULT(vkBindBufferMemory(VulkanContext::device->logicalDevice, stagingBuffer, stagingMemory, 0));
 
-			// Copy texture data into staging buffer
+			VmaAllocationCreateInfo bufferAllocInfo{
+				.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO
+			};
+			VmaAllocation bufferAllocation;
+			VK_CHECK_RESULT(vmaCreateBuffer(VulkanContext::vmaAllocator, &bufferCreateInfo, &bufferAllocInfo, &stagingBuffer, &bufferAllocation, nullptr));
+
 			uint8_t *data;
-			VK_CHECK_RESULT(vkMapMemory(VulkanContext::device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void **)&data));
+			VK_CHECK_RESULT(vmaMapMemory(VulkanContext::vmaAllocator, bufferAllocation, (void**)&data));
 			memcpy(data, ktxTextureData, ktxTextureSize);
-			vkUnmapMemory(VulkanContext::device->logicalDevice, stagingMemory);
 
 			// Setup buffer copy regions for each mip level
 			std::vector<VkBufferImageCopy> bufferCopyRegions;
@@ -197,15 +195,11 @@ namespace vks
 			{
 				imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 			}
-			VK_CHECK_RESULT(vkCreateImage(VulkanContext::device->logicalDevice, &imageCreateInfo, nullptr, &image));
-
-			vkGetImageMemoryRequirements(VulkanContext::device->logicalDevice, image, &memReqs);
-
-			memAllocInfo.allocationSize = memReqs.size;
-
-			memAllocInfo.memoryTypeIndex = VulkanContext::device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-			VK_CHECK_RESULT(vkAllocateMemory(VulkanContext::device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-			VK_CHECK_RESULT(vkBindImageMemory(VulkanContext::device->logicalDevice, image, deviceMemory, 0));
+			VmaAllocationCreateInfo imgAllocInfo{ 
+				.usage = VMA_MEMORY_USAGE_AUTO
+			};
+			VmaAllocation imgAllocation;
+			VK_CHECK_RESULT(vmaCreateImage(VulkanContext::vmaAllocator, &imageCreateInfo, &imgAllocInfo, &image, &imgAllocation, nullptr));
 
 			VkImageSubresourceRange subresourceRange = {};
 			subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -245,8 +239,7 @@ namespace vks
 			VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue);
 
 			// Clean up staging resources
-			vkFreeMemory(VulkanContext::device->logicalDevice, stagingMemory, nullptr);
-			vkDestroyBuffer(VulkanContext::device->logicalDevice, stagingBuffer, nullptr);
+			vmaDestroyBuffer(VulkanContext::vmaAllocator, stagingBuffer, bufferAllocation);
 			
 			ktxTexture_Destroy(ktxTexture);
 
