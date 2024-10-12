@@ -704,10 +704,6 @@ VulkanApplication::~VulkanApplication()
 
 	// @todo: deletion queue
 
-	delete overlay;
-	delete commandPool;
-	delete vulkanDevice;
-
 	if (settings.validation)
 	{
 		if (debugUtilsMessenger != VK_NULL_HANDLE)
@@ -717,6 +713,11 @@ VulkanApplication::~VulkanApplication()
 	}
 
 	vmaDestroyAllocator(VulkanContext::vmaAllocator);
+
+	delete overlay;
+	delete commandPool;
+	delete vulkanDevice;
+
 	vkDestroyInstance(instance, nullptr);
 
 
