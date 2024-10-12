@@ -883,7 +883,6 @@ namespace vkglTF
 		// Vertex data
 		Buffer* vertexStaging = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			.size = vertexBufferSize,
 			.data = loaderInfo.vertexBuffer
 		});
@@ -892,7 +891,6 @@ namespace vkglTF
 		if (indexBufferSize > 0) {
 			indexStaging = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				.size = indexBufferSize,
 				.data = loaderInfo.indexBuffer
 			});
@@ -901,7 +899,6 @@ namespace vkglTF
 		// Create device local buffers
 		vertices = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			.memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			.size = vertexBufferSize,
 			.map = false
 		});
@@ -909,7 +906,6 @@ namespace vkglTF
 		if (indexBufferSize > 0) {
 			indices = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-				.memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 				.size = indexBufferSize,
 				.map = false
 			});

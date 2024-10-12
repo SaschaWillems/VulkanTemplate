@@ -64,6 +64,7 @@ namespace vks
 	/** @brief Vulkan texture base class */
 	class Texture {
 	public:
+		VmaAllocation imgAllocation;
 		VkImage image = VK_NULL_HANDLE;
 		VkImageLayout imageLayout;
 		VkDeviceMemory deviceMemory;
@@ -84,12 +85,11 @@ namespace vks
 		void destroy()
 		{
 			vkDestroyImageView(VulkanContext::device->logicalDevice, view, nullptr);
-			vkDestroyImage(VulkanContext::device->logicalDevice, image, nullptr);
 			if (sampler)
 			{
 				vkDestroySampler(VulkanContext::device->logicalDevice, sampler, nullptr);
 			}
-			vkFreeMemory(VulkanContext::device->logicalDevice, deviceMemory, nullptr);
+			vmaDestroyImage(VulkanContext::vmaAllocator, image, imgAllocation);
 		}
 
 		ktxResult loadKTXFile(std::string filename, ktxTexture **target)
@@ -147,7 +147,7 @@ namespace vks
 			bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
 			VmaAllocationCreateInfo bufferAllocInfo{
-				.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO
+				.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT, .usage = VMA_MEMORY_USAGE_AUTO
 			};
 			VmaAllocation bufferAllocation;
 			VK_CHECK_RESULT(vmaCreateBuffer(VulkanContext::vmaAllocator, &bufferCreateInfo, &bufferAllocInfo, &stagingBuffer, &bufferAllocation, nullptr));
@@ -198,7 +198,6 @@ namespace vks
 			VmaAllocationCreateInfo imgAllocInfo{ 
 				.usage = VMA_MEMORY_USAGE_AUTO
 			};
-			VmaAllocation imgAllocation;
 			VK_CHECK_RESULT(vmaCreateImage(VulkanContext::vmaAllocator, &imageCreateInfo, &imgAllocInfo, &image, &imgAllocation, nullptr));
 
 			VkImageSubresourceRange subresourceRange = {};
@@ -239,6 +238,7 @@ namespace vks
 			VulkanContext::device->flushCommandBuffer(copyCmd, VulkanContext::graphicsQueue);
 
 			// Clean up staging resources
+			vmaUnmapMemory(VulkanContext::vmaAllocator, bufferAllocation);
 			vmaDestroyBuffer(VulkanContext::vmaAllocator, stagingBuffer, bufferAllocation);
 			
 			ktxTexture_Destroy(ktxTexture);

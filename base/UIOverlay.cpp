@@ -106,7 +106,6 @@ namespace vks
 		// Staging buffers for font data upload
 		Buffer* stagingBuffer = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			.size = uploadSize,
 			.data = fontData
 		});
@@ -453,7 +452,6 @@ namespace vks
 			}
 			frameObjects[frameIndex].vertexBuffer = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 				.size = vertexBufferSize,
 			});
 			frameObjects[frameIndex].vertexCount = imDrawData->TotalVtxCount;
@@ -467,7 +465,6 @@ namespace vks
 			}
 			frameObjects[frameIndex].indexBuffer = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 				.size = indexBufferSize,
 			});
 			frameObjects[frameIndex].indexCount = imDrawData->TotalIdxCount;
