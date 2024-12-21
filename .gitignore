@@ -229,3 +229,5 @@ data/models/cerberus/*.*
 .DS_Store
 
 *.cap
+
+_deps/**

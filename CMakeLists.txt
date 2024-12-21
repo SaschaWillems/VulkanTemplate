@@ -26,11 +26,11 @@ include_directories(base/compilers)
 include_directories(base/platforms)
 include_directories(base/interfaces)
 include_directories(base/loaders)
+include_directories(base/stb)
+include_directories(game)
 
 OPTION(USE_D2D_WSI "Build the project using Direct to Display swapchain" OFF)
 OPTION(USE_WAYLAND_WSI "Build the project using Wayland swapchain" OFF)
-
-set(RESOURCE_INSTALL_DIR "" CACHE PATH "Path to install resources to (leave empty for running uninstalled)")
 
 IF(WIN32)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVK_USE_PLATFORM_WIN32_KHR")
@@ -65,11 +65,10 @@ add_definitions(-D_CRT_SECURE_NO_WARNINGS -DVK_NO_PROTOTYPES)
 
 file(GLOB SOURCE *.cpp )
 
-if(RESOURCE_INSTALL_DIR)
-	add_definitions(-DVK_EXAMPLE_DATA_DIR=\"${RESOURCE_INSTALL_DIR}/\")
-	install(DIRECTORY data/ DESTINATION ${RESOURCE_INSTALL_DIR}/)
-else()
-	add_definitions(-DVK_EXAMPLE_DATA_DIR=\"${CMAKE_SOURCE_DIR}/data/\")
+# Asset and shader path selection
+if(NOT USE_RELATIVE_ASSET_PATH)
+	add_definitions(-DDATA_DIR=\"${CMAKE_SOURCE_DIR}/data/\")
+	add_definitions(-DSHADERS_DIR=\"${CMAKE_SOURCE_DIR}/data/shaders/\")
 endif()
 
 # Compiler specific stuff
@@ -88,6 +87,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/")
 
 add_subdirectory(base)
 add_subdirectory(src)
+add_subdirectory(game)
 # add_subdirectory(external)
 add_subdirectory(data\\shaders)
 

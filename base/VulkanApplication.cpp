@@ -140,8 +140,8 @@ const std::string VulkanApplication::getAssetPath()
 {
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	return "";
-#elif defined(VK_EXAMPLE_DATA_DIR)
-	return VK_EXAMPLE_DATA_DIR;
+#elif defined(DATA_DIR)
+	return DATA_DIR;
 #else
 	return "./../data/";
 #endif

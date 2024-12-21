@@ -14,11 +14,13 @@
 #include "glTF.h"
 #include <glm/gtc/type_ptr.hpp>
 #include <stdexcept>
-#include "simulation/RigidBody.hpp"
 #include <random>
 #include "time.h"
 #include "Frustum.hpp"
 #include <SFML/Audio.hpp>
+#include <json.hpp>
+#include "object_types/Monsters.hpp"
+#include "stb_image.h"
 
 // @todo: audio (music and sfx)
 // @todo: sync2 everywhere
@@ -73,6 +75,12 @@ struct Skybox {
 	uint32_t irradianceIndex{ 0 };
 } skybox;
 
+// @todo
+class Game {
+public:
+	ObjectTypes::MonsterTypes monsterTypes{};
+} game;
+
 class Application : public VulkanApplication {
 private:
 	struct FrameObjects : public VulkanFrameObjects {
@@ -116,7 +124,8 @@ public:
 		dxcCompiler = new Dxc();
 	}
 
-	~Application() {
+	~Application() {		
+		vkDeviceWaitIdle(VulkanContext::device->logicalDevice);
 		for (FrameObjects& frame : frameObjects) {
 			destroyBaseFrameObjects(frame);
 		}
@@ -139,46 +148,10 @@ public:
 		delete audioManager;
 	}
 
-	void loadAssets() {
-		const std::map<std::string, std::string> files = {
-			{ "crate", "models/crate_up.glb" },
-			{ "asteroid", "models/asteroid.glb" },
-			{ "moon", "models/moon.gltf" },
-			{ "spaceship", "models/spaceship/scene_ktx.gltf" },
-			{ "bullet", "models/bullet.glb" }
-		};
+	void loadAssets() {		
+		game.monsterTypes.loadFromFile(getAssetPath() + "data/game/monsters.json");
 
-		// @todo: from JSON?
-		const bool hotReload = true;
-		for (auto& it : files) {
-			const std::string filename = getAssetPath() + it.second;
-			auto model = assetManager->add(it.first, new vkglTF::Model({
-				.filename = filename,
-				.enableHotReload = hotReload
-			}));
-			fileWatcher->addFile(filename, model);
-		}
-
-		// Additional textures
 		// @todo
-		skyboxIndex = assetManager->add("skybox", new vks::TextureCubeMap({
-			.filename = getAssetPath() + "textures/space01.ktx",
-			//.filename = getAssetPath() + "textures/cubemap01.ktx",
-			//.format = VK_FORMAT_R8G8B8A8_SRGB,
-			.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-		}));
-
-		skybox.brdfLUT = assetManager->add("brdflut", new vks::Texture2D({
-			.filename = getAssetPath() + "textures/brdflut.ktx",
-			.format = VK_FORMAT_R8G8B8A8_SRGB,
-			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-			.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-		}));
-
 		// Audio
 		const std::map<std::string, std::string> soundFiles = {
 			{ "laser", "sounds/laser1.mp3" }
@@ -196,17 +169,12 @@ public:
 
 		loadAssets();
 
-		generateCubemaps(static_cast<vks::TextureCubeMap*>(assetManager->textures[skyboxIndex]));
-
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
 		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, zFar);
 		camera.setPosition({ 0.0f, -30.0f, 80.0f });
 //		camera.setPosition({ 0.0f, 0.0f, 60.0f });
 
-		//playerShip.localPosition = { 0.0f, 8.0f, -30.0f };
-		//playerShip.localPosition = { 0.0f, 0.0f, 0.0f };
-		//playerShip.localRotation = { 0.0f, 0.0f, 0.0f };
 
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
@@ -214,7 +182,6 @@ public:
 			frameObjects.resize(getFrameCount());
 			frame.uniformBuffer = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-				.memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				.size = sizeof(ShaderData),
 			});
 		}
@@ -318,7 +285,12 @@ public:
 				DynamicState::Scissor,
 				DynamicState::Viewport
 			},
-			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
+			.pipelineRenderingInfo = {
+				.colorAttachmentCount = 1,
+				.pColorAttachmentFormats = &swapChain->colorFormat,
+				.depthAttachmentFormat = depthFormat,
+				.stencilAttachmentFormat = depthFormat
+			},
 			.enableHotReload = true
 		});
 
@@ -421,90 +393,6 @@ public:
 			.enableHotReload = true
 		});
 
-		//ship = actorManager->addActor("playership", new Actor({
-		//	.position = glm::vec3(0.0f),
-		//	.rotation = glm::vec3(0.0f),
-		//	.scale = glm::vec3(0.5f),
-		//	.model = assetManager->models["spaceship"]
-		//}));
-
-		//actorManager->addActor("orientation_crate", new Actor({
-		//	.position = glm::vec3(0.0f, 0.0f, -15.0f),
-		//	.rotation = glm::vec3(0.0f),
-		//	.scale = glm::vec3(0.5f),
-		//	.model = assetManager->models["crate"],
-		//}));
-
-		// Set up a grid of asteroids for testing purposes
-		std::default_random_engine rndGenerator((unsigned)time(nullptr));
-		//std::uniform_real_distribution<float> uniformDist(-1.0f, 1.0f);
-		//const int r = 8;
-		//const float s = 8.0f;
-		uint32_t a_idx = 0;
-		//for (int32_t x = -r; x < r; x++) {
-		//	for (int32_t y = -r; y < r; y++) {
-		//		for (int32_t z = -r; z < r; z++) {
-		//			glm::vec3 rndOffset = glm::vec3(uniformDist(rndGenerator), uniformDist(rndGenerator), uniformDist(rndGenerator)) * 5.0f;
-		//			actorManager->addActor("asteroid" + std::to_string(a_idx), new Actor({
-		//				.position = (glm::vec3(x, y, z) + rndOffset) * s,
-		//				.rotation = glm::vec3(360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator)),
-		//				.scale = glm::vec3(5.0f + uniformDist(rndGenerator) * 2.5f - uniformDist(rndGenerator) * 2.5f),
-		//				.model = assetManager->models["asteroid"],
-		//				.tag = "asteroid"
-		//			}));
-		//			a_idx++;
-		//		}
-		//	}
-		//}
-
-		const uint32_t asteroidCount = 8192;
-
-		std::uniform_real_distribution<float> uniformDist(0.0, 1.0);
-
-		// Distribute rocks randomly on two different rings
-		for (auto i = 0; i < asteroidCount / 2; i++) {
-			glm::vec2 ring0{ 7.0f, 16.0f };
-			glm::vec2 ring1{ 14.0f, 24.0f };
-
-			ring0 *= 10.0f;
-			ring1 *= 15.0f;
-
-			float rho, theta;
-
-
-			// Inner ring
-			rho = sqrt((pow(ring0[1], 2.0f) - pow(ring0[0], 2.0f)) * uniformDist(rndGenerator) + pow(ring0[0], 2.0f));
-			theta = static_cast<float>(2.0f * M_PI * uniformDist(rndGenerator));
-			actorManager->addActor("asteroid" + std::to_string(a_idx), new Actor({
-				.position = glm::vec3(rho * cos(theta), uniformDist(rndGenerator) * 16.0f, rho * sin(theta)),
-				.rotation = glm::vec3(360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator)),
-				.scale = glm::vec3(5.0f + uniformDist(rndGenerator) * 2.5f - uniformDist(rndGenerator) * 2.5f),
-				.model = assetManager->models["asteroid"],
-				.tag = "asteroid"
-			}));
-			a_idx++;
-
-			// Outer ring
-			rho = sqrt((pow(ring1[1], 2.0f) - pow(ring1[0], 2.0f)) * uniformDist(rndGenerator) + pow(ring1[0], 2.0f));
-			theta = static_cast<float>(2.0f * M_PI * uniformDist(rndGenerator));
-			actorManager->addActor("asteroid" + std::to_string(a_idx), new Actor({
-				.position = glm::vec3(rho * cos(theta), uniformDist(rndGenerator) * 16.0f, rho * sin(theta)),
-				.rotation = glm::vec3(360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator), 360.0f * uniformDist(rndGenerator)),
-				.scale = glm::vec3(5.0f + uniformDist(rndGenerator) * 2.5f - uniformDist(rndGenerator) * 2.5f),
-				.model = assetManager->models["asteroid"],
-				.tag = "asteroid"
-				}));
-			a_idx++;
-		}
-
-		actorManager->addActor("moon", new Actor({
-			.position = glm::vec3(0.0f, 0.0f, 0.0f),
-			.rotation = glm::vec3(0.0f),
-			.scale = glm::vec3(5.0f),
-			.model = assetManager->models["moon"],
-			.tag = "moon"
-		}));
-
 		pipelineList.push_back(pipelines["skybox"]);
 		pipelineList.push_back(pipelines["playership"]);
 		pipelineList.push_back(pipelines["gltf"]);
@@ -526,350 +414,6 @@ public:
 		}
 		prepared = true;
 	}
-
-#pragma region PBR
-	void generateCubemaps(vks::TextureCubeMap* source)
-	{
-		enum Target { IRRADIANCE = 0, RADIANCE = 1 };
-
-		for (uint32_t target = 0; target < RADIANCE + 1; target++) {
-
-			vks::TextureCubeMap* cubemap = new vks::TextureCubeMap();
-
-			auto tStart = std::chrono::high_resolution_clock::now();
-
-			VkFormat format;
-			uint32_t dim;
-
-			switch (target) {
-			case IRRADIANCE:
-				format = VK_FORMAT_R32G32B32A32_SFLOAT;
-				dim = 64;
-				break;
-			case RADIANCE:
-				format = VK_FORMAT_R16G16B16A16_SFLOAT;
-				dim = 512;
-				break;
-			};
-
-			const uint32_t numMips = static_cast<uint32_t>(floor(log2(dim))) + 1;
-
-			Device* device = VulkanContext::device;
-
-			// Create target cubemap
-			// Image
-			VkImageCreateInfo imageCI = vks::initializers::imageCreateInfo();
-			imageCI.imageType = VK_IMAGE_TYPE_2D;
-			imageCI.format = format;
-			imageCI.extent.width = dim;
-			imageCI.extent.height = dim;
-			imageCI.extent.depth = 1;
-			imageCI.mipLevels = numMips;
-			imageCI.arrayLayers = 6;
-			imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
-			imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
-			imageCI.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-			imageCI.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-			VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCI, nullptr, &cubemap->image));
-			VkMemoryRequirements memReqs;
-			vkGetImageMemoryRequirements(device->logicalDevice, cubemap->image, &memReqs);
-			VkMemoryAllocateInfo memAllocInfo{};
-			memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			memAllocInfo.allocationSize = memReqs.size;
-			memAllocInfo.memoryTypeIndex = device->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-			VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &cubemap->deviceMemory));
-			VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, cubemap->image, cubemap->deviceMemory, 0));
-
-			// View
-			VkImageViewCreateInfo viewCI = vks::initializers::imageViewCreateInfo();
-			viewCI.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-			viewCI.format = format;
-			viewCI.subresourceRange = {};
-			viewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			viewCI.subresourceRange.levelCount = numMips;
-			viewCI.subresourceRange.layerCount = 6;
-			viewCI.image = cubemap->image;
-			VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCI, nullptr, &cubemap->view));
-
-			VkSamplerCreateInfo samplerCI = vks::initializers::samplerCreateInfo();
-			samplerCI.magFilter = VK_FILTER_LINEAR;
-			samplerCI.minFilter = VK_FILTER_LINEAR;
-			samplerCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-			samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerCI.minLod = 0.0f;
-			samplerCI.maxLod = static_cast<float>(numMips);
-			samplerCI.maxAnisotropy = 1.0f;
-			samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-			VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCI, nullptr, &cubemap->sampler));
-
-			// Create offscreen framebuffer
-			Image* offscreen = new Image({
-				.name = "Offscreen cubemap generation image",
-				.type = VK_IMAGE_TYPE_2D,
-				.format = format,
-				.extent = {
-					.width = dim,
-					.height = dim,
-					.depth = 1 
-				},
-				.tiling = VK_IMAGE_TILING_OPTIMAL,
-				.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-			});
-
-			ImageView* offscreenView = new ImageView(offscreen);
-
-			// Descriptors
-			DescriptorPool* descriptorPool = new DescriptorPool({
-				.maxSets = 1,
-				.poolSizes = {
-					{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 },
-				}
-			});
-
-			DescriptorSetLayout* descriptorSetLayout = new DescriptorSetLayout({
-				.bindings = {
-					{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT }
-				}
-			});
-
-			DescriptorSet* descriptorSet = new DescriptorSet({
-				.pool = descriptorPool,
-				.layouts = { descriptorSetLayout->handle },
-				.descriptors = {
-					{.dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &source->descriptor }
-				}
-			});
-
-			struct PushBlockIrradiance {
-				glm::mat4 mvp;
-				float deltaPhi = (2.0f * float(M_PI)) / 180.0f;
-				float deltaTheta = (0.5f * float(M_PI)) / 64.0f;
-			} pushBlockIrradiance;
-
-			struct PushBlockPrefilterEnv {
-				glm::mat4 mvp;
-				float roughness = 0.0f;
-				uint32_t numSamples = 32u;
-			} pushBlockPrefilterEnv;
-
-			const uint32_t pushConstSize = static_cast<uint32_t>((target == IRRADIANCE ? sizeof(PushBlockIrradiance) : sizeof(PushBlockPrefilterEnv)));
-			PipelineLayout* pipelineLayout = new PipelineLayout({
-				.layouts = { descriptorSetLayout->handle },
-				.pushConstantRanges = {
-					{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = pushConstSize }
-				}
-			});
-
-			std::string vertexShader = "filtercube.vert.hlsl";
-			std::string fragmentShader = (target == IRRADIANCE ? "filtercube_irradiance.frag.hlsl" : "filtercube_radiance.frag.hlsl");
-
-			// Pipeline
-			Pipeline* pipeline = new Pipeline({
-				.shaders = {
-					getAssetPath() + "shaders/" + vertexShader,
-					getAssetPath() + "shaders/" + fragmentShader
-				},
-				.cache = pipelineCache,
-				.layout = pipelineLayout->handle,
-				.vertexInput = vkglTF::vertexInput,
-				.inputAssemblyState = {
-					.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-				},
-				.viewportState = {
-					.viewportCount = 1,
-					.scissorCount = 1
-				},
-				.rasterizationState = {
-					.polygonMode = VK_POLYGON_MODE_FILL,
-					.cullMode = VK_CULL_MODE_NONE,
-					.frontFace = VK_FRONT_FACE_CLOCKWISE,
-					.lineWidth = 1.0f
-				},
-				.multisampleState = {
-					.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-				},
-				.depthStencilState = {
-					.depthTestEnable = VK_FALSE,
-					.depthWriteEnable = VK_FALSE,
-					.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
-				},
-				.blending = {
-					.attachments = { 
-						{.blendEnable = VK_FALSE, .colorWriteMask = 0xF }
-					}
-				},
-				.dynamicState = {
-					DynamicState::Scissor,
-					DynamicState::Viewport
-				},
-				.pipelineRenderingInfo = {
-					.colorAttachmentCount = 1,
-					.pColorAttachmentFormats = &format,
-				},
-				.enableHotReload = false
-			});
-
-			VkRenderingAttachmentInfo colorAttachment = {
-				.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
-				.imageView = offscreenView->handle,
-				.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-				.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-				.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-				.clearValue = { .color = { 0.0f, 0.0f, 0.0f, 0.0f } }
-			};
-
-			VkRenderingInfo renderingInfo = {
-				.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
-				.renderArea = { 0, 0, static_cast<uint32_t>(dim), static_cast<uint32_t>(dim) },
-				.layerCount = 1,
-				.colorAttachmentCount = 1,
-				.pColorAttachments = &colorAttachment,
-			};
-
-			// Render cubemap
-			const std::vector<glm::mat4> matrices = {
-				glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-				glm::rotate(glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f)), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-				glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-				glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-				glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f)),
-				glm::rotate(glm::mat4(1.0f), glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
-			};
-
-			CommandBuffer* cb = new CommandBuffer({ .device = *vulkanDevice, .pool = commandPool });
-
-			cb->begin();
-			// Initial transition for offscreen image
-			cb->insertImageMemoryBarrier({
-				.srcAccessMask = 0,
-				.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-				.image = offscreen->handle,
-				.subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1 }
-				}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-			// Change image layout for all cubemap faces to transfer destination
-			cb->insertImageMemoryBarrier({
-				.srcAccessMask = 0,
-				.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-				.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-				.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				.image = cubemap->image,
-				.subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount =  numMips, .layerCount = 6 }
-				}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-
-			for (uint32_t m = 0; m < numMips; m++) {
-				for (uint32_t f = 0; f < 6; f++) {
-					glm::vec2 viewport = glm::vec2(static_cast<float>(dim * std::pow(0.5f, m)), static_cast<float>(dim * std::pow(0.5f, m)));
-
-					cb->insertImageMemoryBarrier({
-						.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-						.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-						.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-						.image = offscreen->handle,
-						.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
-						}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-					cb->beginRendering(renderingInfo);
-					cb->setViewport(0, 0, viewport.x, viewport.y, 0.0f, 1.0f);
-					cb->setScissor(0, 0, static_cast<uint32_t>(viewport.x), static_cast<uint32_t>(viewport.y));
-					
-					// Pass parameters for current pass using a push constant block
-					switch (target) {
-					case IRRADIANCE:
-						pushBlockIrradiance.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
-						cb->updatePushConstant(pipelineLayout, 0, &pushBlockIrradiance);
-						break;
-					case RADIANCE:
-						pushBlockPrefilterEnv.mvp = glm::perspective((float)(M_PI / 2.0), 1.0f, 0.1f, 512.0f) * matrices[f];
-						pushBlockPrefilterEnv.roughness = (float)m / (float)(numMips - 1);
-						cb->updatePushConstant(pipelineLayout, 0, &pushBlockPrefilterEnv);
-						break;
-					};
-
-					cb->bindPipeline(pipeline);
-					cb->bindDescriptorSets(pipelineLayout, { descriptorSet });
-					assetManager->models["crate"]->draw(cb->handle, pipelineLayout->handle, glm::mat4(1.0f), true, true);
-
-					cb->endRendering();
-
-					// Copy region for transfer from framebuffer to cube face
-					VkImageCopy copyRegion = {
-						.srcSubresource = {
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.mipLevel = 0,
-							.baseArrayLayer = 0,
-							.layerCount = 1
-						},
-						.srcOffset = { 0, 0, 0 },
-						.dstSubresource = {
-							.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-							.mipLevel = m,
-							.baseArrayLayer = f,
-							.layerCount = 1
-						},
-						.dstOffset = { 0, 0, 0 },
-						.extent = {
-							.width = static_cast<uint32_t>(viewport.x),
-							.height = static_cast<uint32_t>(viewport.y),
-							.depth = 1
-}
-					};
-					vkCmdCopyImage(cb->handle, offscreen->handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-
-					cb->insertImageMemoryBarrier({
-						.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-						.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-						.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-						.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-						.image = offscreen->handle,
-						.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
-						}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-				}
-			}
-
-			cb->insertImageMemoryBarrier({
-				.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-				.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
-				.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-				.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-				.image = cubemap->image,
-				.subresourceRange = { .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = numMips, .layerCount = 6 }
-				}, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
-			cb->end();
-			cb->oneTimeSubmit(queue);
-
-			cubemap->descriptor.imageView = cubemap->view;
-			cubemap->descriptor.sampler = cubemap->sampler;
-			cubemap->descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-			switch (target) {
-			case IRRADIANCE:
-				skybox.irradianceIndex = assetManager->add("skybox_irradiance", cubemap);
-				break;
-			case RADIANCE:
-				skybox.radianceIndex = assetManager->add("skybox_radiance", cubemap);
-				break;
-			};
-
-			delete cb;
-			delete pipeline;
-			delete pipelineLayout;
-			delete descriptorPool;
-			delete descriptorSetLayout;
-			delete descriptorSet;
-			delete offscreen;
-			delete offscreenView;
-
-			auto tEnd = std::chrono::high_resolution_clock::now();
-			auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
-			std::cout << "Generating cube map with " << numMips << " mip levels took " << tDiff << " ms" << std::endl;
-		}
-	}
-
-#pragma endregion PBR
 
 	void recordCommandBuffer(FrameObjects& frame)
 	{
@@ -1073,7 +617,8 @@ public:
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
 		overlay.text("visible objects: %d", visibleObjects);
-		overlay.text("Angular velocity: %.6f, %.6f", camera.angularVelocity.x, camera.angularVelocity.y);
+		overlay.text("%.6f", camera.targetAngularVelocity.x - camera.angularVelocity.x);
+		overlay.text("%.6f", camera.targetAngularVelocity.y - camera.angularVelocity.y);
 		//overlay.text("Cursor NDC: %.2f, %.2f", camera.mouse.cursorPosNDC.x, camera.mouse.cursorPosNDC.y);
 	}
 

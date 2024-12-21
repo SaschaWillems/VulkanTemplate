@@ -2,8 +2,8 @@
 file(GLOB_RECURSE UTILITIES_SRC "./utilities/*.cpp")
 file(GLOB_RECURSE UTILITIES_HEADERS "./utilities/*.hpp" "./utilities/*.h")
 
-file(GLOB BASE_SRC "*.cpp" "*.hpp" "*.h" "./loaders/*.h" "./loaders/*.cpp" "./compilers/*.hpp" "./compilers/*.cpp" "./interfaces/*.cpp" "./interfaces/*.h" "./platforms/*.cpp" "./wrappers/*.cpp" "./wrappers/*.hpp" "../external/imgui/*.cpp" "../external/volk/volk.c" "../external/tracy/TracyClient.cpp" "./simulation/*.cpp" "./simulation/*.hpp" ${UTILITIES_SRC})
-file(GLOB BASE_HEADERS "*.hpp" "./interfaces/*.h" ${UTILITIES_HEADERS})
+file(GLOB BASE_SRC "*.cpp" "*.hpp" "*.h" "./loaders/*.h" "./loaders/*.cpp" "./compilers/*.hpp" "./compilers/*.cpp" "./interfaces/*.cpp" "./interfaces/*.h" "./platforms/*.cpp" "./wrappers/*.cpp" "./wrappers/*.hpp" "../external/imgui/*.cpp" "../external/volk/volk.c" "../external/tracy/TracyClient.cpp" ${UTILITIES_SRC})
+file(GLOB BASE_HEADERS "*.hpp" "../external/vma/vk_mem_alloc.h" "./interfaces/*.h" ${UTILITIES_HEADERS})
 
 # libktx
 set(KTX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/ktx)
@@ -15,8 +15,6 @@ set(KTX_SOURCES
     ${KTX_DIR}/lib/memstream.c
     ${KTX_DIR}/lib/filestream.c
 )
-
-message(STATUS ${UTILITIES_HEADERS})
 
 source_group("ktx" FILES ${KTX_SOURCES})
 source_group("utilities" FILES ${UTILITIES_SRC})
