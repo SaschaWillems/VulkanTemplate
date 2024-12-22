@@ -35,7 +35,8 @@ struct SamplerCreateInfo {
 
 class Sampler : public DeviceResource {
 public:
-	VkSampler handle;
+	VkSampler handle{ VK_NULL_HANDLE };
+	VkDescriptorImageInfo descriptor{};
 
 	Sampler(SamplerCreateInfo createInfo) : DeviceResource(createInfo.name) {
 		VkSamplerCreateInfo CI{};
@@ -56,6 +57,7 @@ public:
 		CI.borderColor = createInfo.borderColor;
 		CI.unnormalizedCoordinates = createInfo.unnormalizedCoordinates;
 		VK_CHECK_RESULT(vkCreateSampler(VulkanContext::device->logicalDevice, &CI, nullptr, &handle));
+		descriptor.sampler = handle;
 	}
 
 	~Sampler() {

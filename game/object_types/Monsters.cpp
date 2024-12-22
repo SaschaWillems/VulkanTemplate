@@ -24,7 +24,7 @@ namespace ObjectTypes {
 			typeSet.name = set.key();
 
 			for (auto& monster : set.value().items()) {
-				auto jsonElement = monster.value();
+				nlohmann::json& jsonElement = monster.value();
 				MonsterType type{};
 				type.name = jsonElement["name"];
 				type.image = jsonElement["image"];

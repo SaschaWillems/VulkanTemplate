@@ -55,7 +55,6 @@ uint32_t skyboxIndex{ 0 };
 ActorManager* actorManager{ nullptr };
 AssetManager* assetManager{ nullptr };
 AudioManager* audioManager{ nullptr };
-Actor* ship{ nullptr };
 
 const float zFar = 1024.0f * 8.0f;
 
@@ -63,10 +62,7 @@ vks::Frustum frustum;
 uint32_t visibleObjects{ 0 };
 
 struct PushConstBlock {
-	glm::mat4 matrix;
-	uint32_t textureIndex;
-	uint32_t radianceIndex;
-	uint32_t irradianceIndex;
+	uint32_t spriteIndex;
 } pushConstBlock;
 
 struct Skybox {
@@ -87,17 +83,25 @@ private:
 		Buffer* uniformBuffer;
 		DescriptorSet* descriptorSet;
 	};
+	// One set for all images
+	std::vector<VkDescriptorImageInfo> textureDescriptors{};
+	std::vector<VkDescriptorImageInfo> samplerDescriptors{};
+	std::vector<vks::Texture2D*> textures{};
+	Sampler* spriteSampler{ nullptr };
+
 	std::vector<FrameObjects> frameObjects;
-	PipelineLayout* glTFPipelineLayout;
-	PipelineLayout* skyboxPipelineLayout;
 	FileWatcher* fileWatcher{ nullptr };
 	DescriptorPool* descriptorPool;
 	DescriptorSetLayout* descriptorSetLayout;
+	DescriptorSetLayout* descriptorSetLayoutSamplers;
 	DescriptorSetLayout* descriptorSetLayoutTextures;
 	DescriptorSet* descriptorSetTextures;
+	DescriptorSet* descriptorSetSamplers;
+	std::unordered_map<std::string, PipelineLayout*> pipelineLayouts;
 	std::unordered_map<std::string, Pipeline*> pipelines;
 	sf::Music backgroundMusic;
 	float firingTimer;
+	int32_t spriteIndex{ 0 };
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -149,7 +153,39 @@ public:
 	}
 
 	void loadAssets() {		
-		game.monsterTypes.loadFromFile(getAssetPath() + "data/game/monsters.json");
+		game.monsterTypes.loadFromFile(getAssetPath() + "game/monsters.json");
+		// @todo
+		for (auto& set : game.monsterTypes.sets) {
+			for (auto& type : set.types) {
+				int width, height, channels;
+				const std::string fileName = getAssetPath() + "game/monsters/" + type.image;
+				unsigned char* img = stbi_load(fileName.c_str(), &width, &height, &channels, 0);
+				size_t imgSize = static_cast<uint32_t>(width * height * channels);
+				assert(img != nullptr);	
+
+				vks::TextureFromBufferCreateInfo texCI = {
+					.buffer = img,
+					.bufferSize = imgSize,
+					.texWidth = static_cast<uint32_t>(width),
+					.texHeight = static_cast<uint32_t>(height),
+					.format = VK_FORMAT_R8G8B8A8_SRGB,
+					.createSampler = false,
+				};
+				vks::Texture2D* tex = new vks::Texture2D(texCI);
+				textures.push_back(tex);
+
+				stbi_image_free(img);
+			}
+		}
+
+		SamplerCreateInfo samplerCI {
+			.name = "Sprite sampler",
+			.magFilter = VK_FILTER_NEAREST,
+			.minFilter = VK_FILTER_NEAREST,
+			.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+			.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+		};
+		spriteSampler = new Sampler(samplerCI);
 
 		// @todo
 		// Audio
@@ -160,6 +196,55 @@ public:
 		for (auto& it : soundFiles) {
 			audioManager->AddSoundFile(it.first, getAssetPath() + it.second);
 		}
+	}
+
+	void updateTextureDescriptor() {
+		// @todo: actual update logic
+
+		// Use one large descriptor set for all imgages
+		textureDescriptors.clear();
+		for (auto& tex : textures) {
+			textureDescriptors.push_back(tex->descriptor);
+		}
+
+		const uint32_t textureCount = static_cast<uint32_t>(textureDescriptors.size());
+		descriptorSetLayoutTextures = new DescriptorSetLayout({
+			.descriptorIndexing = true,
+			.bindings = {
+				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = textureCount, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT}
+			}
+		});
+
+		descriptorSetTextures = new DescriptorSet({
+			.pool = descriptorPool,
+			.variableDescriptorCount = textureCount,
+			.layouts = { descriptorSetLayoutTextures->handle },
+			.descriptors = {
+				{.dstBinding = 0, .descriptorCount = textureCount, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .pImageInfo = textureDescriptors.data()}
+			}
+		});
+
+		// Samplers
+		// @todo: only one sampler right mow
+		samplerDescriptors.clear();
+		samplerDescriptors.push_back(spriteSampler->descriptor);
+
+		const uint32_t samplerCount = static_cast<uint32_t>(samplerDescriptors.size());
+		descriptorSetLayoutSamplers = new DescriptorSetLayout({
+			.descriptorIndexing = true,
+			.bindings = {
+				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = samplerCount, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT},
+			}
+		});
+
+		descriptorSetSamplers = new DescriptorSet({
+			.pool = descriptorPool,
+			.variableDescriptorCount = samplerCount,
+			.layouts = { descriptorSetLayoutSamplers->handle },
+			.descriptors = {
+				{.dstBinding = 0, .descriptorCount = samplerCount, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER, .pImageInfo = samplerDescriptors.data()},
+			}
+		});
 	}
 
 	void prepare() {
@@ -188,10 +273,13 @@ public:
 
 		descriptorPool = new DescriptorPool({
 			.name = "Application descriptor pool",
-			.maxSets = getFrameCount() + 1,
+			// @todo
+			.maxSets = 32,
+//			.maxSets = getFrameCount() + 2,
 			.poolSizes = {
-				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1024 /*getFrameCount()*/ },
-				{.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1024 /*@todo*/},
+				{.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 8 /*getFrameCount()*/ },
+				{.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = 4096 /*@todo*/},
+				{.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = 256 /*@todo*/},
 			}
 		});
 
@@ -211,7 +299,7 @@ public:
 			});
 		}
 		
-		// One large set for all textures
+		updateTextureDescriptor();
 
 		VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo{};
 		pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
@@ -223,40 +311,22 @@ public:
 		VkPipelineColorBlendAttachmentState blendAttachmentState{};
 		blendAttachmentState.colorWriteMask = 0xf;
 
-		// Use one large descriptor set for all imgages (aka "bindless")
-		std::vector<VkDescriptorImageInfo> textureDescriptors{};
-		for (auto i = 0; i < assetManager->textures.size(); i++) {
-			// @todo: directly construct from asset manager=?
-			VkDescriptorImageInfo imageInfo{};
-			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfo.sampler = assetManager->textures[i]->sampler;
-			imageInfo.imageView = assetManager->textures[i]->view;
-			textureDescriptors.push_back(imageInfo);
-		};
-
-		descriptorSetLayoutTextures = new DescriptorSetLayout({
-			.descriptorIndexing = true,
-			.bindings = {
-				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = static_cast<uint32_t>(textureDescriptors.size()), .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT}
-			}
-		});
-
-		glTFPipelineLayout = new PipelineLayout({
-			.layouts = { descriptorSetLayout->handle, descriptorSetLayoutTextures->handle },
+		pipelineLayouts["sprite"] = new PipelineLayout({
+			.layouts = { descriptorSetLayoutTextures->handle, descriptorSetLayoutSamplers->handle },
 			.pushConstantRanges = {
 				// @todo
 				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
 			}
 		});
 
-		pipelines["gltf"] = new Pipeline({
+		pipelines["sprite"] = new Pipeline({
 			.shaders = {
-				getAssetPath() + "shaders/gltf.vert.hlsl",
-				getAssetPath() + "shaders/gltf.frag.hlsl"
+				getAssetPath() + "shaders/sprite.vert.hlsl",
+				getAssetPath() + "shaders/sprite.frag.hlsl"
 			},
 			.cache = pipelineCache,
-			.layout = *glTFPipelineLayout,
-			.vertexInput = vkglTF::vertexInput,
+			.layout = *pipelineLayouts["sprite"],
+			//.vertexInput = vkglTF::vertexInput,
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},
@@ -294,108 +364,7 @@ public:
 			.enableHotReload = true
 		});
 
-		pipelines["playership"] = new Pipeline({
-			.shaders = {
-				getAssetPath() + "shaders/playership.vert.hlsl",
-				getAssetPath() + "shaders/gltf.frag.hlsl"
-			},
-			.cache = pipelineCache,
-			.layout = *glTFPipelineLayout,
-			.vertexInput = vkglTF::vertexInput,
-			.inputAssemblyState = {
-				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-			},
-			.viewportState = {
-				.viewportCount = 1,
-				.scissorCount = 1
-			},
-			.rasterizationState = {
-				.polygonMode = VK_POLYGON_MODE_FILL,
-				.cullMode = VK_CULL_MODE_BACK_BIT,
-				.frontFace = VK_FRONT_FACE_CLOCKWISE,
-				.lineWidth = 1.0f
-			},
-			.multisampleState = {
-				.rasterizationSamples = settings.sampleCount,
-			},
-			.depthStencilState = {
-				.depthTestEnable = VK_TRUE,
-				.depthWriteEnable = VK_TRUE,
-				.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
-			},
-			.blending = {
-				.attachments = { blendAttachmentState }
-			},
-			.dynamicState = {
-				DynamicState::Scissor,
-				DynamicState::Viewport
-			},
-			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
-			.enableHotReload = true
-		});
-
-		//
-
-		descriptorSetTextures = new DescriptorSet({
-			.pool = descriptorPool,
-			.variableDescriptorCount = static_cast<uint32_t>(textureDescriptors.size()),
-			.layouts = { descriptorSetLayoutTextures->handle },
-			.descriptors = {
-				{.dstBinding = 0, .descriptorCount = static_cast<uint32_t>(textureDescriptors.size()), .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = textureDescriptors.data()}
-			}
-		});
-
-		// @todo: push consts also used by gltf renderer
-		skyboxPipelineLayout = new PipelineLayout({
-			.layouts = { descriptorSetLayout->handle, descriptorSetLayoutTextures->handle },
-			.pushConstantRanges = {
-				{.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(PushConstBlock)}
-			}
-		});
-
-		pipelines["skybox"] = new Pipeline({
-			.shaders = {
-				getAssetPath() + "shaders/skybox.vert.hlsl",
-				getAssetPath() + "shaders/skybox.frag.hlsl"
-			},
-			.cache = pipelineCache,
-			.layout = *skyboxPipelineLayout,
-			.vertexInput = vkglTF::vertexInput,
-			.inputAssemblyState = {
-				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
-			},
-			.viewportState = {
-				.viewportCount = 1,
-				.scissorCount = 1
-			},
-			.rasterizationState = {
-				.polygonMode = VK_POLYGON_MODE_FILL,
-				.cullMode = VK_CULL_MODE_BACK_BIT,
-				.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-				.lineWidth = 1.0f
-			},
-			.multisampleState = {
-				.rasterizationSamples = settings.sampleCount,
-			},
-			.depthStencilState = {
-				.depthTestEnable = VK_FALSE,
-				.depthWriteEnable = VK_FALSE,
-				.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
-			},
-			.blending = {
-				.attachments = { blendAttachmentState }
-			},
-			.dynamicState = {
-				DynamicState::Scissor,
-				DynamicState::Viewport
-			},
-			.pipelineRenderingInfo = pipelineRenderingCreateInfo,
-			.enableHotReload = true
-		});
-
-		pipelineList.push_back(pipelines["skybox"]);
-		pipelineList.push_back(pipelines["playership"]);
-		pipelineList.push_back(pipelines["gltf"]);
+ 		pipelineList.push_back(pipelines["sprite"]);
 
 		for (auto& pipeline : pipelineList) {
 			fileWatcher->addPipeline(pipeline);
@@ -492,46 +461,21 @@ public:
 		cb->setScissor(0, 0, width, height);
 
 		// Backdrop
+		//PushConstBlock pushConstBlock{};
+		//pushConstBlock.textureIndex = skyboxIndex;
+		//cb->bindPipeline(pipelines["skybox"]);
+		//cb->bindDescriptorSets(skyboxPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
+		//cb->updatePushConstant(skyboxPipelineLayout, 0, &pushConstBlock);
+		//assetManager->models["crate"]->draw(cb->handle, glTFPipelineLayout->handle, glm::mat4(1.0f), true, true);
+
 		PushConstBlock pushConstBlock{};
-		pushConstBlock.textureIndex = skyboxIndex;
-		cb->bindPipeline(pipelines["skybox"]);
-		cb->bindDescriptorSets(skyboxPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
-		cb->updatePushConstant(skyboxPipelineLayout, 0, &pushConstBlock);
-		assetManager->models["crate"]->draw(cb->handle, glTFPipelineLayout->handle, glm::mat4(1.0f), true, true);
+		pushConstBlock.spriteIndex = spriteIndex;
 
-		// @todo
-		vkglTF::pushConstBlock.irradianceIndex = skybox.irradianceIndex;
-		vkglTF::pushConstBlock.radianceIndex = skybox.radianceIndex;
-
-		cb->bindDescriptorSets(glTFPipelineLayout, { frame.descriptorSet, descriptorSetTextures });
+		cb->bindDescriptorSets(pipelineLayouts["sprite"], { descriptorSetTextures, descriptorSetSamplers });
+		cb->bindPipeline(pipelines["sprite"]);
+		cb->updatePushConstant(pipelineLayouts["sprite"], 0, &pushConstBlock);
+		cb->draw(3, 1, 0, 0);
 		
-		//glm::vec3 currPos = { 0.0f, 8.0f, -30.0f }; //playerShip.localPosition;// +glm::vec3(0.0f, 0.0f, -playerShip.acceleration * 2.0f);
-		// glm::mat4 locMatrix = glm::translate(glm::mat4(1.0f), currPos);
-		// locMatrix = glm::scale(locMatrix, glm::vec3(0.5f));
-		// actorManager->actors["playership"]->position = camera.position * glm::vec3(-1.0f);
-		// cb->bindPipeline(pipelines["playership"]);
-		// ship->model->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
-		
-		cb->bindPipeline(pipelines["gltf"]);
-		
-		// @todo: instancing
-		vkglTF::Model* lastBoundModel{ nullptr };
-		visibleObjects = 0;
-		auto modelChanges = 0;
-		for (auto& it : actorManager->actors) {
-			auto actor = it.second;
-			if (frustum.checkSphere(actor->position, actor->getRadius() * 2.0f)) {
-				if (actor->model != lastBoundModel) {
-					lastBoundModel = actor->model;
-					actor->model->bindBuffers(cb->handle);
-					modelChanges++;
-				}
-				visibleObjects++;
-				glm::mat4 locMatrix = actor->getMatrix();
-				lastBoundModel->draw(cb->handle, glTFPipelineLayout->handle, locMatrix);
-			}
-		}
-
 		if (overlay->visible) {
 			overlay->draw(cb, getCurrentFrameIndex());
 		}
@@ -596,30 +540,18 @@ public:
 		}
 
 		// @todo
-		if (sf::Mouse::isButtonPressed(sf::Mouse::Left) && firingTimer <= 0.0f) {
-			// @todo: test
-			actorManager->addActor("bullet" + std::to_string(actorManager->actors.size() + 1), new Actor({
-				.position = glm::vec3(camera.position),
-				.rotation = glm::vec3(0.0f),
-				.scale = glm::vec3(0.5f),
-				.model = assetManager->models["bullet"],
-				.tag = "bullet",
-				// @todo: velocity from player ship
-				.constantVelocity = glm::vec3(camera.getForward()) * 100.0f
-				}));
-			audioManager->PlaySnd("laser");
-			firingTimer = 1.0f;
-		}
+		//if (sf::Mouse::isButtonPressed(sf::Mouse::Left) && firingTimer <= 0.0f) {
+		//	// @todo: test
+		//	audioManager->PlaySnd("laser");
+		//	firingTimer = 1.0f;
+		//}
 		firingTimer -= frameTimer;
 
 		//time += frameTimer;
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		overlay.text("visible objects: %d", visibleObjects);
-		overlay.text("%.6f", camera.targetAngularVelocity.x - camera.angularVelocity.x);
-		overlay.text("%.6f", camera.targetAngularVelocity.y - camera.angularVelocity.y);
-		//overlay.text("Cursor NDC: %.2f, %.2f", camera.mouse.cursorPosNDC.x, camera.mouse.cursorPosNDC.y);
+		overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
 	}
 
 	void onFileChanged(const std::string filename, const std::vector<void*> owners) {
@@ -638,14 +570,17 @@ public:
 
 	virtual void keyPressed(uint32_t key)
 	{
-		if (key == sf::Keyboard::P) {
-			camera.physicsBased = !camera.physicsBased;
+		if (key == sf::Keyboard::Add) {
+			spriteIndex++;
+			if (spriteIndex > textureDescriptors.size()) {
+				spriteIndex = 0;
+			}
 		}
-		if (key == sf::Keyboard::C) {
-			camera.mouse.cursorLock = !camera.mouse.cursorLock;
-		}
-		if (key == sf::Keyboard::L) {
-			camera.mouse.cursorLock = !camera.mouse.cursorLock;
+		if (key == sf::Keyboard::Subtract) {
+			spriteIndex--;
+			if (spriteIndex < 0) {
+				spriteIndex = textureDescriptors.size() - 1;
+			}
 		}
 	}
 

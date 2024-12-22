@@ -25,15 +25,15 @@ public:
 
 	DescriptorSetLayout(DescriptorSetLayoutCreateInfo createInfo) {
 		VkDescriptorSetLayoutCreateInfo CI = vks::initializers::descriptorSetLayoutCreateInfo(createInfo.bindings.data(), static_cast<uint32_t>(createInfo.bindings.size()));
+		const VkDescriptorBindingFlags descriptorBindingFlags = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
 		VkDescriptorSetLayoutBindingFlagsCreateInfo setLayoutBindingFlags{};
-			setLayoutBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+		std::vector<VkDescriptorBindingFlags> bindingFlags(createInfo.bindings.size());
+		setLayoutBindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
 		if (createInfo.descriptorIndexing) {
-			// @todo: Right now only support descriptor index for layout with single binding
-			assert(createInfo.bindings.size() == 1);
-			setLayoutBindingFlags.bindingCount = 1;
-			VkDescriptorBindingFlags descriptorBindingFlags = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
-			setLayoutBindingFlags.pBindingFlags = &descriptorBindingFlags;
-			CI.pNext = &setLayoutBindingFlags;
+			// Descriptor indexing only for final binding
+			bindingFlags.back() = VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
+			setLayoutBindingFlags.bindingCount = static_cast<uint32_t>(bindingFlags.size());
+			setLayoutBindingFlags.pBindingFlags = bindingFlags.data();
 		}
 		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(VulkanContext::device->logicalDevice, &CI, nullptr, &handle));
 	}
