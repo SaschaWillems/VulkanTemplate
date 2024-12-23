@@ -8,13 +8,15 @@
 
 //cbuffer ubo : register(b0) { UBO ubo; }
 
-//struct VSInput
-//{
-//[[vk::location(0)]]float3 pos : POSITION0;
-//[[vk::location(1)]]float3 normal : NORMAL0;
-//[[vk::location(2)]]float2 uv : TEXCOORD0;
-//[[vk::location(6)]]float4 color : COLOR0;
-//};
+struct VSInput
+{
+    [[vk::location(0)]]float3 pos : POSITION0;
+    [[vk::location(1)]]float2 uv : TEXCOORD0;
+    // Instanced attributes
+    [[vk::location(2)]] float3 instancePos : POSITION1;
+    [[vk::location(3)]] float2 instanceScale: POSITION2;
+    [[vk::location(4)]] int instanceTextureIndex : TEXCOORD3;
+};
 
 struct PushConsts {
     uint spriteIndex;
@@ -26,13 +28,17 @@ struct VSOutput
 	float4 pos : SV_POSITION;
 [[vk::location(0)]] float2 uv : TEXCOORD0;
 [[vk::location(1)]] float4 color : COLOR0;
+[[vk::location(2)]] nointerpolation int textureIndex : TEXCOORD1;
 };
 
-//VSOutput main(VSInput input)
-VSOutput main(uint VertexIndex : SV_VertexID)
+VSOutput main(VSInput input)
 {
     VSOutput output = (VSOutput) 0;
-    output.uv = float2((VertexIndex << 1) & 2, VertexIndex & 2);
-    output.pos = float4(output.uv * 2.0f - 1.0f, 0.0f, 1.0f);
+    float3 locPos = input.pos + input.instancePos;
+    output.pos = float4(locPos, 1.0);
+    output.pos.xy *= 0.15;
+    output.uv = input.uv;
+    //output.uv.x = 1.0 - output.uv.x;
+    output.textureIndex = input.instanceTextureIndex;
     return output;
 }

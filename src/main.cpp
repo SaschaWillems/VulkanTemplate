@@ -50,6 +50,18 @@ struct ShaderData {
 	float timer{ 0.0f };
 } shaderData;
 
+struct Vertex {
+	float pos[3];
+	float uv[2];
+};
+
+struct InstanceData {
+	glm::vec3 pos;
+	glm::vec2 scale{ 1.0f };
+	uint32_t imageIndex{ 0 };
+};
+uint32_t instanceCount{ 0 };
+
 uint32_t skyboxIndex{ 0 };
 
 ActorManager* actorManager{ nullptr };
@@ -102,6 +114,8 @@ private:
 	sf::Music backgroundMusic;
 	float firingTimer;
 	int32_t spriteIndex{ 0 };
+	Buffer* quadBuffer{ nullptr };
+	Buffer* instanceBuffer{ nullptr };
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -150,6 +164,8 @@ public:
 			backgroundMusic.stop();
 		}
 		delete audioManager;
+		delete quadBuffer;
+		delete instanceBuffer;
 	}
 
 	void loadAssets() {		
@@ -247,12 +263,112 @@ public:
 		});
 	}
 
+	void generateQuad()
+	{
+		std::vector<Vertex> vertices =
+		{
+			{ {  1.0f,  1.0f, 0.0f }, { 1.0f, 1.0f } },
+			{ { -1.0f,  1.0f, 0.0f }, { 0.0f, 1.0f } },
+			{ { -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f } },
+
+			{ { -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f } },
+			{ {  1.0f, -1.0f, 0.0f }, { 1.0f, 0.0f } },
+			{ {  1.0f,  1.0f, 0.0f }, { 1.0f, 1.0f } },
+		};
+
+		const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
+
+		// Stage to device
+		Buffer* stagingBuffer = new Buffer({
+			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.size = vertexBufferSize,
+		});
+		stagingBuffer->map();
+		stagingBuffer->copyTo(vertices.data(), vertexBufferSize);
+		stagingBuffer->unmap();
+
+		quadBuffer = new Buffer({
+			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			.size = vertexBufferSize,
+		});
+
+		CommandBuffer* cb = new CommandBuffer({
+			.device = *vulkanDevice,
+			.pool = commandPool
+		});
+
+		cb->begin();
+		VkBufferCopy bufferCopy = { .size = vertexBufferSize };
+		vkCmdCopyBuffer(cb->handle, stagingBuffer->buffer, quadBuffer->buffer, 1, &bufferCopy);
+		cb->end();
+		cb->oneTimeSubmit(queue);
+		delete cb;
+		
+		// @todo
+		//delete stagingBuffer;
+	}
+
+	void updateInstanceBuffer() {
+		// @todo: one per frame in flight
+		if (instanceBuffer) {
+			delete instanceBuffer;
+		}
+
+		// @todo: 10 Random instances for testing
+
+		std::default_random_engine rndGenerator((unsigned)time(nullptr));
+		std::uniform_real_distribution<float> uniformDist(-5.0f, 5.0f);
+		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size()));
+
+		std::vector<InstanceData> instances{};
+		for (auto i = 0; i < 10; i++) {
+			InstanceData instance{};
+			instance.imageIndex = rndTextureIndex(rndGenerator);
+			instance.pos = glm::vec3(uniformDist(rndGenerator), uniformDist(rndGenerator), 0.0f);
+			instances.push_back(instance);
+		}
+		instanceCount = static_cast<uint32_t>(instances.size());
+
+		const size_t instanceBufferSize = instances.size() * sizeof(InstanceData);
+
+		//bufferCI.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		Buffer* stagingBuffer = new Buffer({
+			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.size = instanceBufferSize,
+		});
+		stagingBuffer->map();
+		stagingBuffer->copyTo(instances.data(), instanceBufferSize);
+		stagingBuffer->unmap();
+
+		instanceBuffer = new Buffer({
+			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			.size = instanceBufferSize
+		});
+
+		// @todo: global copy command buffer
+		CommandBuffer* cb = new CommandBuffer({ .device = *vulkanDevice, .pool = commandPool });
+		cb->begin();
+		VkBufferCopy bufferCopy = { .size = instanceBufferSize };
+		vkCmdCopyBuffer(cb->handle, stagingBuffer->buffer, instanceBuffer->buffer, 1, &bufferCopy);
+		cb->end();
+		cb->oneTimeSubmit(queue);
+		delete cb;
+
+		// @todo: destroy staging buffer
+		//delete stagingBuffer;
+	}
+
 	void prepare() {
 		VulkanApplication::prepare();
 
 		fileWatcher = new FileWatcher();
 
 		loadAssets();
+
+		generateQuad();
+
+		// @todo: Update every frame
+		updateInstanceBuffer();
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
@@ -319,6 +435,21 @@ public:
 			}
 		});
 
+		PipelineVertexInput vertexInput = {
+			.bindings = {
+				{ .binding = 0, .stride = sizeof(Vertex), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX },
+				{ .binding = 1, .stride = sizeof(InstanceData), .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE }
+			},
+			.attributes = {
+				{ .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(Vertex, pos) },
+				{ .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, uv) },
+				// Instanced
+				{ .location = 2, .binding = 1, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(InstanceData, pos) },
+				{ .location = 3, .binding = 1, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(InstanceData, scale) },
+				{ .location = 4, .binding = 1, .format = VK_FORMAT_R32_SINT, .offset = offsetof(InstanceData, imageIndex) },
+			}
+		};
+
 		pipelines["sprite"] = new Pipeline({
 			.shaders = {
 				getAssetPath() + "shaders/sprite.vert.hlsl",
@@ -326,7 +457,7 @@ public:
 			},
 			.cache = pipelineCache,
 			.layout = *pipelineLayouts["sprite"],
-			//.vertexInput = vkglTF::vertexInput,
+			.vertexInput = vertexInput,
 			.inputAssemblyState = {
 				.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 			},
@@ -471,10 +602,15 @@ public:
 		PushConstBlock pushConstBlock{};
 		pushConstBlock.spriteIndex = spriteIndex;
 
+		// Draw sprites using instancing
+		// Instancing buffer stores sprite index, position, scale, direction (to flip/rotate) uv, maybe color for health state
+
+		cb->bindVertexBuffers(0, 1, { quadBuffer->buffer });
+		cb->bindVertexBuffers(1, 1, { instanceBuffer->buffer });
 		cb->bindDescriptorSets(pipelineLayouts["sprite"], { descriptorSetTextures, descriptorSetSamplers });
 		cb->bindPipeline(pipelines["sprite"]);
 		cb->updatePushConstant(pipelineLayouts["sprite"], 0, &pushConstBlock);
-		cb->draw(3, 1, 0, 0);
+		cb->draw(6, instanceCount, 0, 0);
 		
 		if (overlay->visible) {
 			overlay->draw(cb, getCurrentFrameIndex());
@@ -551,7 +687,7 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
+		//overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
 	}
 
 	void onFileChanged(const std::string filename, const std::vector<void*> owners) {
