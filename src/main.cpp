@@ -62,8 +62,6 @@ struct InstanceData {
 };
 uint32_t instanceCount{ 0 };
 
-uint32_t skyboxIndex{ 0 };
-
 ActorManager* actorManager{ nullptr };
 AssetManager* assetManager{ nullptr };
 AudioManager* audioManager{ nullptr };
@@ -98,7 +96,7 @@ private:
 	std::vector<FrameObjects> frameObjects;
 	FileWatcher* fileWatcher{ nullptr };
 	DescriptorPool* descriptorPool;
-	DescriptorSetLayout* descriptorSetLayout;
+	DescriptorSetLayout* descriptorSetLayoutUniforms;
 	DescriptorSetLayout* descriptorSetLayoutSamplers;
 	DescriptorSetLayout* descriptorSetLayoutTextures;
 	DescriptorSet* descriptorSetTextures;
@@ -110,6 +108,7 @@ private:
 	int32_t spriteIndex{ 0 };
 	Buffer* quadBuffer{ nullptr };
 	Buffer* instanceBuffer{ nullptr };
+	glm::vec2 screenDim{ 0.0f };
 public:	
 	Application() : VulkanApplication() {
 		apiVersion = VK_API_VERSION_1_3;
@@ -153,7 +152,7 @@ public:
 			delete texture;
 		}
 		delete descriptorPool;
-		delete descriptorSetLayout;
+		delete descriptorSetLayoutUniforms;
 		delete assetManager;
 		delete actorManager;
 
@@ -391,7 +390,7 @@ public:
 			}
 		});
 
-		descriptorSetLayout = new DescriptorSetLayout({
+		descriptorSetLayoutUniforms = new DescriptorSetLayout({
 			.bindings = {
 				{.binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = 1, .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT }
 			}
@@ -400,7 +399,7 @@ public:
 		for (FrameObjects& frame : frameObjects) {
 			frame.descriptorSet = new DescriptorSet({
 				.pool = descriptorPool,
-				.layouts = { descriptorSetLayout->handle },
+				.layouts = { descriptorSetLayoutUniforms->handle },
 				.descriptors = {
 					{.dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &frame.uniformBuffer->descriptor }
 				}
@@ -420,7 +419,7 @@ public:
 		blendAttachmentState.colorWriteMask = 0xf;
 
 		pipelineLayouts["sprite"] = new PipelineLayout({
-			.layouts = { descriptorSetLayoutTextures->handle, descriptorSetLayoutSamplers->handle },
+			.layouts = { descriptorSetLayoutTextures->handle, descriptorSetLayoutSamplers->handle, descriptorSetLayoutUniforms->handle },
 			.pushConstantRanges = {
 				// @todo
 				{ .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, .offset = 0, .size = sizeof(PushConstBlock) }
@@ -599,7 +598,7 @@ public:
 
 		cb->bindVertexBuffers(0, 1, { quadBuffer->buffer });
 		cb->bindVertexBuffers(1, 1, { instanceBuffer->buffer });
-		cb->bindDescriptorSets(pipelineLayouts["sprite"], { descriptorSetTextures, descriptorSetSamplers });
+		cb->bindDescriptorSets(pipelineLayouts["sprite"], { descriptorSetTextures, descriptorSetSamplers, frame.descriptorSet });
 		cb->bindPipeline(pipelines["sprite"]);
 		cb->updatePushConstant(pipelineLayouts["sprite"], 0, &pushConstBlock);
 		cb->draw(6, instanceCount, 0, 0);
@@ -635,11 +634,13 @@ public:
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
-		//shaderData.time = time;
 		shaderData.timer = timer;
 
-		shaderData.projection = camera.matrices.perspective;
-		shaderData.view = camera.matrices.view;
+		// @todo: absolute or relative?
+		const float aspectRatio = (float)width / (float)height;
+		screenDim = glm::vec2(2.5f * aspectRatio, 2.5f);
+		shaderData.projection = glm::ortho(-screenDim.x, screenDim.x, -screenDim.x, screenDim.x);
+		shaderData.view = glm::mat4(1.0f);
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
 
 		frustum.update(camera.matrices.perspective * camera.matrices.view);
