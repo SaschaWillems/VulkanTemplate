@@ -8,8 +8,8 @@
 
 namespace Game {
 	namespace Entities {
-		class Monster : Entity {
-
+		class Monster : public Entity {
+			
 		};
 	}
 }

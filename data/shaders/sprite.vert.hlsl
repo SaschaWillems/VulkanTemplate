@@ -1,12 +1,12 @@
-//struct UBO
-//{
-//	float4x4 projection;
-//	float4x4 view;
-//	float time;
-//	float2 resolution;
-//};
-
-//cbuffer ubo : register(b0) { UBO ubo; }
+struct UBO
+{
+	float4x4 projection;
+	float4x4 view;
+	float time;
+	float2 resolution;
+};
+[[vk::binding(0, 2)]]
+ConstantBuffer<UBO> ubo : register(b0,space2);
 
 struct VSInput
 {
@@ -35,10 +35,8 @@ VSOutput main(VSInput input)
 {
     VSOutput output = (VSOutput) 0;
     float3 locPos = input.pos + input.instancePos;
-    output.pos = float4(locPos, 1.0);
-    output.pos.xy *= 0.15;
+    output.pos = mul(ubo.projection, float4(locPos, 1.0));
     output.uv = input.uv;
-    //output.uv.x = 1.0 - output.uv.x;
     output.textureIndex = input.instanceTextureIndex;
     return output;
 }

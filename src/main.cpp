@@ -16,10 +16,11 @@
 #include <stdexcept>
 #include <random>
 #include "time.h"
-#include "Frustum.hpp"
 #include <SFML/Audio.hpp>
 #include <json.hpp>
 #include "object_types/Monsters.hpp"
+#include "entities/Entity.hpp"
+#include "entities/Monster.hpp"
 #include "stb_image.h"
 
 // @todo: audio (music and sfx)
@@ -68,17 +69,16 @@ AudioManager* audioManager{ nullptr };
 
 const float zFar = 1024.0f * 8.0f;
 
-vks::Frustum frustum;
-uint32_t visibleObjects{ 0 };
-
 struct PushConstBlock {
 	uint32_t spriteIndex;
 } pushConstBlock;
 
 // @todo
-class Game {
+class _Game {
 public:
 	ObjectTypes::MonsterTypes monsterTypes{};
+	// @todo: Entity manager
+	std::vector<Game::Entities::Monster> monsters;
 } game;
 
 class Application : public VulkanApplication {
@@ -133,6 +133,11 @@ public:
 		ApplicationContext::assetManager = assetManager;
 
 		dxcCompiler = new Dxc();
+
+		// @todo: absolute or relative?
+		const float aspectRatio = (float)width / (float)height;
+		screenDim = glm::vec2(25.0f/* * aspectRatio*/, 25.0f);
+		shaderData.projection = glm::ortho(-screenDim.x, screenDim.x, -screenDim.x, screenDim.x);
 	}
 
 	~Application() {		
@@ -302,26 +307,44 @@ public:
 		delete stagingBuffer;
 	}
 
+	// @todo
+	void spawnMonsters(uint32_t count) {
+		// @todo: properl sync, instance buffer per frame in flight
+		//vkDeviceWaitIdle(vulkanDevice->logicalDevice);
+
+		// @todo: Just testing
+		std::default_random_engine rndGenerator((unsigned)time(nullptr));
+		std::uniform_real_distribution<float> posDistX(-screenDim.x, screenDim.x);
+		std::uniform_real_distribution<float> posDistY(-screenDim.y, screenDim.y);
+		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size() - 1));
+
+		for (auto i = 0; i < count; i++) {
+			Game::Entities::Monster m;
+			m.position = glm::vec2(posDistX(rndGenerator), posDistY(rndGenerator));
+			m.imageIndex = rndTextureIndex(rndGenerator);
+			game.monsters.push_back(m);
+		}
+
+		updateInstanceBuffer();
+	}
+
 	void updateInstanceBuffer() {
+
 		// @todo: one per frame in flight
 		if (instanceBuffer) {
 			delete instanceBuffer;
 		}
 
-		// @todo: 10 Random instances for testing
-
-		std::default_random_engine rndGenerator((unsigned)time(nullptr));
-		std::uniform_real_distribution<float> uniformDist(-5.0f, 5.0f);
-		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size()));
-
+		// Only updated if changed, not needed on every frame
 		std::vector<InstanceData> instances{};
-		for (auto i = 0; i < 10; i++) {
+		for (auto& monster : game.monsters) {
 			InstanceData instance{};
-			instance.imageIndex = rndTextureIndex(rndGenerator);
-			instance.pos = glm::vec3(uniformDist(rndGenerator), uniformDist(rndGenerator), 0.0f);
+			instance.imageIndex = monster.imageIndex;
+			instance.pos = glm::vec3(monster.position, 0.0f);
 			instances.push_back(instance);
 		}
 		instanceCount = static_cast<uint32_t>(instances.size());
+		assert(instanceCount > 0);
 
 		const size_t instanceBufferSize = instances.size() * sizeof(InstanceData);
 
@@ -359,7 +382,8 @@ public:
 		generateQuad();
 
 		// @todo: Update every frame
-		updateInstanceBuffer();
+		spawnMonsters(256);
+		//updateInstanceBuffer();
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
@@ -636,14 +660,8 @@ public:
 		updateOverlay(getCurrentFrameIndex());
 		shaderData.timer = timer;
 
-		// @todo: absolute or relative?
-		const float aspectRatio = (float)width / (float)height;
-		screenDim = glm::vec2(2.5f * aspectRatio, 2.5f);
-		shaderData.projection = glm::ortho(-screenDim.x, screenDim.x, -screenDim.x, screenDim.x);
 		shaderData.view = glm::mat4(1.0f);
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
-
-		frustum.update(camera.matrices.perspective * camera.matrices.view);
 
 		for (auto& it : actorManager->actors) {
 			it.second->update(frameTimer);
@@ -680,6 +698,7 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
+		overlay.text("%d monsters", game.monsters.size());
 		//overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
 	}
 
@@ -700,10 +719,11 @@ public:
 	virtual void keyPressed(uint32_t key)
 	{
 		if (key == sf::Keyboard::Add) {
-			spriteIndex++;
-			if (spriteIndex > textureDescriptors.size()) {
-				spriteIndex = 0;
-			}
+			spawnMonsters(4096);
+			//spriteIndex++;
+			//if (spriteIndex > textureDescriptors.size()) {
+			//	spriteIndex = 0;
+			//}
 		}
 		if (key == sf::Keyboard::Subtract) {
 			spriteIndex--;
