@@ -77,12 +77,6 @@ struct PushConstBlock {
 	uint32_t spriteIndex;
 } pushConstBlock;
 
-struct Skybox {
-	uint32_t brdfLUT{ 0 };
-	uint32_t radianceIndex{ 0 };
-	uint32_t irradianceIndex{ 0 };
-} skybox;
-
 // @todo
 class Game {
 public:
@@ -146,6 +140,7 @@ public:
 		vkDeviceWaitIdle(VulkanContext::device->logicalDevice);
 		for (FrameObjects& frame : frameObjects) {
 			destroyBaseFrameObjects(frame);
+			delete frame.uniformBuffer;
 		}
 		if (fileWatcher) {
 			fileWatcher->stop();
@@ -153,6 +148,9 @@ public:
 		}
 		for (auto& it : pipelines) {
 			delete it.second;
+		}
+		for (auto& texture : textures) {
+			delete texture;
 		}
 		delete descriptorPool;
 		delete descriptorSetLayout;
@@ -282,10 +280,8 @@ public:
 		Buffer* stagingBuffer = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			.size = vertexBufferSize,
+			.data = vertices.data()
 		});
-		stagingBuffer->map();
-		stagingBuffer->copyTo(vertices.data(), vertexBufferSize);
-		stagingBuffer->unmap();
 
 		quadBuffer = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -304,8 +300,7 @@ public:
 		cb->oneTimeSubmit(queue);
 		delete cb;
 		
-		// @todo
-		//delete stagingBuffer;
+		delete stagingBuffer;
 	}
 
 	void updateInstanceBuffer() {
@@ -331,14 +326,12 @@ public:
 
 		const size_t instanceBufferSize = instances.size() * sizeof(InstanceData);
 
-		//bufferCI.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		// @todo: keep a global staging buffer that's reused (and large enough
 		Buffer* stagingBuffer = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			.size = instanceBufferSize,
+			.data = instances.data()
 		});
-		stagingBuffer->map();
-		stagingBuffer->copyTo(instances.data(), instanceBufferSize);
-		stagingBuffer->unmap();
 
 		instanceBuffer = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -354,8 +347,7 @@ public:
 		cb->oneTimeSubmit(queue);
 		delete cb;
 
-		// @todo: destroy staging buffer
-		//delete stagingBuffer;
+		delete stagingBuffer;
 	}
 
 	void prepare() {

@@ -711,15 +711,13 @@ VulkanApplication::~VulkanApplication()
 			vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
 		}
 	}
-
-	vmaDestroyAllocator(VulkanContext::vmaAllocator);
-
 	delete overlay;
 	delete commandPool;
+	
+	vmaDestroyAllocator(VulkanContext::vmaAllocator);
+	
 	delete vulkanDevice;
-
 	vkDestroyInstance(instance, nullptr);
-
 
 #if defined(_DIRECT2DISPLAY)
 
