@@ -59,7 +59,7 @@ struct Vertex {
 
 struct InstanceData {
 	glm::vec3 pos;
-	glm::vec2 scale{ 1.0f };
+	float scale{ 1.0f };
 	uint32_t imageIndex{ 0 };
 };
 
@@ -326,19 +326,22 @@ public:
 
 	// @todo
 	void spawnMonsters(uint32_t count) {
-		// @todo: properl sync, instance buffer per frame in flight
-		//vkDeviceWaitIdle(vulkanDevice->logicalDevice);
-
 		// @todo: Just testing
 		std::default_random_engine rndGenerator((unsigned)time(nullptr));
 		std::uniform_real_distribution<float> posDistX(-screenDim.x, screenDim.x);
 		std::uniform_real_distribution<float> posDistY(-screenDim.y, screenDim.y);
+		std::uniform_real_distribution<float> dirDist(-1.0f, 1.0f);
+		std::uniform_real_distribution<float> speedDist(1.0f, 2.0f);
+		std::uniform_real_distribution<float> scaleDist(0.5f, 1.0f);
 		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size() - 1));
 
 		for (auto i = 0; i < count; i++) {
 			Game::Entities::Monster m;
 			m.position = glm::vec2(posDistX(rndGenerator), posDistY(rndGenerator));
 			m.imageIndex = rndTextureIndex(rndGenerator);
+			m.direction = glm::vec2(dirDist(rndGenerator), dirDist(rndGenerator));
+			m.speed = speedDist(rndGenerator);
+			m.scale = scaleDist(rndGenerator);
 			game.monsters.push_back(m);
 		}
 	}
@@ -353,9 +356,16 @@ public:
 		frame.instanceBufferDrawCount = static_cast<uint32_t>(game.monsters.size());
 
 		for (auto i = 0; i < game.monsters.size(); i++) {
-			//Game::Entities::Monster& monster = game.monsters[i];
-			frame.instances[i].imageIndex = game.monsters[i].imageIndex;
-			frame.instances[i].pos = glm::vec3(game.monsters[i].position, 0.0f);
+			Game::Entities::Monster& monster = game.monsters[i];
+			
+			// @todo: simple "logic" for testing
+			monster.position += monster.direction * monster.speed * frameTimer;
+			if (abs(monster.position.x) > screenDim.x) { monster.direction.x *= -1.0f; }
+			if (abs(monster.position.y) > screenDim.y) { monster.direction.y *= -1.0f; }
+
+			frame.instances[i].imageIndex = monster.imageIndex;
+			frame.instances[i].pos = glm::vec3(monster.position, 0.0f);
+			frame.instances[i].scale = monster.scale;
 		}
 		
 		assert(frame.instanceBufferDrawCount > 0);
@@ -400,7 +410,7 @@ public:
 		generateQuad();
 
 		// @todo: Update every frame
-		spawnMonsters(1000000);
+		spawnMonsters(1150000);
 //		spawnMonsters(200960);
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
@@ -479,7 +489,7 @@ public:
 				{ .location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(Vertex, uv) },
 				// Instanced
 				{ .location = 2, .binding = 1, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = offsetof(InstanceData, pos) },
-				{ .location = 3, .binding = 1, .format = VK_FORMAT_R32G32_SFLOAT, .offset = offsetof(InstanceData, scale) },
+				{ .location = 3, .binding = 1, .format = VK_FORMAT_R32_SFLOAT, .offset = offsetof(InstanceData, scale) },
 				{ .location = 4, .binding = 1, .format = VK_FORMAT_R32_SINT, .offset = offsetof(InstanceData, imageIndex) },
 			}
 		};
@@ -509,8 +519,8 @@ public:
 				.rasterizationSamples = settings.sampleCount,
 			},
 			.depthStencilState = {
-				.depthTestEnable = VK_TRUE,
-				.depthWriteEnable = VK_TRUE,
+				.depthTestEnable = VK_FALSE,
+				.depthWriteEnable = VK_FALSE,
 				.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL,
 			},
 			.blending = {
@@ -720,7 +730,7 @@ public:
 	}
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
-		overlay.text("%d monsters", game.monsters.size());
+		overlay.text("%d sprites", game.monsters.size());
 		//overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
 	}
 

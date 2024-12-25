@@ -17,6 +17,7 @@ namespace Game {
 			float timer{ 0.0f };
 			float health{ 100.0f };
 			float speed{ 1.0f };
+			float scale{ 1.0f };
 			// @todo: archetype instead
 			uint32_t imageIndex;
 		};

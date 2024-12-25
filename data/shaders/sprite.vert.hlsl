@@ -14,7 +14,7 @@ struct VSInput
     [[vk::location(1)]]float2 uv : TEXCOORD0;
     // Instanced attributes
     [[vk::location(2)]] float3 instancePos : POSITION1;
-    [[vk::location(3)]] float2 instanceScale: POSITION2;
+    [[vk::location(3)]] float instanceScale: POSITION2;
     [[vk::location(4)]] int instanceTextureIndex : TEXCOORD3;
 };
 
@@ -34,8 +34,8 @@ struct VSOutput
 VSOutput main(VSInput input)
 {
     VSOutput output = (VSOutput) 0;
-    float3 locPos = input.pos + input.instancePos;
-    output.pos = mul(ubo.projection, float4(locPos, 1.0));
+    float3 locPos = input.pos * input.instanceScale;
+    output.pos = mul(ubo.projection, float4(locPos + input.instancePos, 1.0));
     output.uv = input.uv;
     output.textureIndex = input.instanceTextureIndex;
     return output;
