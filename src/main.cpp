@@ -80,6 +80,13 @@ public:
 	// @todo: Entity manager
 	std::vector<Game::Entities::Monster> monsters;
 	Game::Entities::Player player;
+
+	//
+	float spawnTriggerTimer{ 0.0f };
+	// Will be lowered with increasing game duration
+	float spawnTriggerDuration{ 100.0f };
+	// Will be increased with increasing game duration
+	uint32_t spawnTriggerMonsterCount{ 128 };
 } game;
 
 class Application : public VulkanApplication {
@@ -96,7 +103,7 @@ private:
 	};
 	// One large staging buffer that's reused for all copies
 	// @todo: per frame?
-	const size_t stagingBufferSize = 16 * 1024 * 1024;
+	const size_t stagingBufferSize = 32 * 1024 * 1024;
 	Buffer* stagingBuffer{ nullptr };
 	CommandBuffer* copyCommandBuffer{ nullptr };
 
@@ -187,29 +194,35 @@ public:
 		delete quadBuffer;
 	}
 
+	void loadTexture(const std::string filename, uint32_t& index)
+	{
+		int width, height, channels;
+		unsigned char* img = stbi_load(filename.c_str(), &width, &height, &channels, 0);
+		size_t imgSize = static_cast<uint32_t>(width * height * channels);
+		assert(img != nullptr);
+
+		vks::TextureFromBufferCreateInfo texCI = {
+			.buffer = img,
+			.bufferSize = imgSize,
+			.texWidth = static_cast<uint32_t>(width),
+			.texHeight = static_cast<uint32_t>(height),
+			.format = VK_FORMAT_R8G8B8A8_SRGB,
+			.createSampler = false,
+		};
+		vks::Texture2D* tex = new vks::Texture2D(texCI);
+		textures.push_back(tex);
+
+		stbi_image_free(img);
+
+		index = static_cast<uint32_t>(textures.size() - 1);;
+	}
+
 	void loadAssets() {		
 		game.monsterTypes.loadFromFile(getAssetPath() + "game/monsters.json");
 		// @todo
 		for (auto& set : game.monsterTypes.sets) {
 			for (auto& type : set.types) {
-				int width, height, channels;
-				const std::string fileName = getAssetPath() + "game/monsters/" + type.image;
-				unsigned char* img = stbi_load(fileName.c_str(), &width, &height, &channels, 0);
-				size_t imgSize = static_cast<uint32_t>(width * height * channels);
-				assert(img != nullptr);	
-
-				vks::TextureFromBufferCreateInfo texCI = {
-					.buffer = img,
-					.bufferSize = imgSize,
-					.texWidth = static_cast<uint32_t>(width),
-					.texHeight = static_cast<uint32_t>(height),
-					.format = VK_FORMAT_R8G8B8A8_SRGB,
-					.createSampler = false,
-				};
-				vks::Texture2D* tex = new vks::Texture2D(texCI);
-				textures.push_back(tex);
-
-				stbi_image_free(img);
+				loadTexture(getAssetPath() + "game/monsters/" + type.image, type.imageIndex);
 			}
 		}
 
@@ -331,18 +344,47 @@ public:
 		std::uniform_real_distribution<float> posDistX(-screenDim.x, screenDim.x);
 		std::uniform_real_distribution<float> posDistY(-screenDim.y, screenDim.y);
 		std::uniform_real_distribution<float> dirDist(-1.0f, 1.0f);
-		std::uniform_real_distribution<float> speedDist(1.0f, 2.0f);
+		std::uniform_real_distribution<float> speedDist(0.5f, 2.5f);
 		std::uniform_real_distribution<float> scaleDist(0.5f, 1.0f);
 		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size() - 1));
+		std::uniform_int_distribution<uint32_t> spawnSectorDist(0, 3);
+		std::uniform_real_distribution<float> uniformDist(0.0, 1.0);
 
+		// Spawn in a ring centered at the player position
 		for (auto i = 0; i < count; i++) {
 			Game::Entities::Monster m;
-			m.position = glm::vec2(posDistX(rndGenerator), posDistY(rndGenerator));
+
+			glm::vec2 ring{ screenDim.x * 1.5f, screenDim.x * 1.75f };
+			float rho, theta;
+
+			// Inner ring
+			rho = sqrt((pow(ring[1], 2.0f) - pow(ring[0], 2.0f)) * uniformDist(rndGenerator) + pow(ring[0], 2.0f));
+			theta = static_cast<float>(2.0f * M_PI * uniformDist(rndGenerator));
+
+			m.position = glm::vec2(rho * cos(theta), rho * sin(theta)) + game.player.position;
 			m.imageIndex = rndTextureIndex(rndGenerator);
-			m.direction = glm::vec2(dirDist(rndGenerator), dirDist(rndGenerator));
 			m.speed = speedDist(rndGenerator);
 			m.scale = scaleDist(rndGenerator);
 			game.monsters.push_back(m);
+		}
+	}
+
+	void updateGameLogic()
+	{
+		game.spawnTriggerTimer += frameTimer * 25.0f;
+		if (game.spawnTriggerTimer > game.spawnTriggerDuration) {
+			game.spawnTriggerTimer = 0.0f;
+			spawnMonsters(game.spawnTriggerMonsterCount);
+		}
+
+		for (auto i = 0; i < game.monsters.size(); i++) {
+			Game::Entities::Monster& monster = game.monsters[i];
+			// @todo: simple "logic" for testing
+			// @todo: Use velocity
+			monster.direction = glm::normalize(game.player.position - monster.position);
+			monster.position += monster.direction * monster.speed * frameTimer;
+			if (abs(monster.position.x) > screenDim.x) { monster.direction.x *= -1.0f; }
+			if (abs(monster.position.y) > screenDim.y) { monster.direction.y *= -1.0f; }
 		}
 	}
 
@@ -358,11 +400,6 @@ public:
 		for (auto i = 0; i < game.monsters.size(); i++) {
 			Game::Entities::Monster& monster = game.monsters[i];
 			
-			// @todo: simple "logic" for testing
-			monster.position += monster.direction * monster.speed * frameTimer;
-			if (abs(monster.position.x) > screenDim.x) { monster.direction.x *= -1.0f; }
-			if (abs(monster.position.y) > screenDim.y) { monster.direction.y *= -1.0f; }
-
 			frame.instances[i].imageIndex = monster.imageIndex;
 			frame.instances[i].pos = glm::vec3(monster.position, 0.0f);
 			frame.instances[i].scale = monster.scale;
@@ -405,20 +442,18 @@ public:
 
 		fileWatcher = new FileWatcher();
 
+		game.player.speed = 5.0f;
+
 		loadAssets();
 
 		generateQuad();
 
-		// @todo: Update every frame
-		spawnMonsters(1150000);
-//		spawnMonsters(200960);
+		// @todo: for benchmarking, this is > 60 fps on my setup
+		//spawnMonsters(1150000);
+		spawnMonsters(game.spawnTriggerMonsterCount);
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
-		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, zFar);
-		camera.setPosition({ 0.0f, -30.0f, 80.0f });
-//		camera.setPosition({ 0.0f, 0.0f, 60.0f });
-
 
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
@@ -599,7 +634,7 @@ public:
 		colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR;
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		colorAttachment.clearValue.color = { 0.0f, 0.0f, 0.0f, 0.0f };
+		colorAttachment.clearValue.color = { 0.0f, 0.15f, 0.0f, 0.0f };
 		if (multiSampling) {
 			colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 			colorAttachment.resolveImageView = swapChain->buffers[swapChain->currentImageIndex].view;
@@ -688,11 +723,12 @@ public:
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
 		// @todo
+		updateGameLogic();
 		updateInstanceBuffer(currentFrame);
 
 		shaderData.timer = timer;
-
-		shaderData.view = glm::mat4(1.0f);
+		//shaderData.view = glm::mat4(1.0f);
+		shaderData.view = glm::translate(glm::mat4(1.0f), -glm::vec3(game.player.position / screenDim, 0.0f));
 		memcpy(currentFrame.uniformBuffer->mapped, &shaderData, sizeof(ShaderData)); // @todo: buffer function
 
 		for (auto& it : actorManager->actors) {
@@ -718,6 +754,23 @@ public:
 			}
 		}
 
+		float playerSpeed = game.player.speed;
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) {
+			playerSpeed *= 2.0f;
+		}
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
+			game.player.position.x -= playerSpeed * frameTimer;
+		}
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
+			game.player.position.x += playerSpeed * frameTimer;
+		}
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) {
+			game.player.position.y -= playerSpeed * frameTimer;
+		}
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
+			game.player.position.y += playerSpeed * frameTimer;
+		}
+
 		// @todo
 		//if (sf::Mouse::isButtonPressed(sf::Mouse::Left) && firingTimer <= 0.0f) {
 		//	// @todo: test
@@ -731,6 +784,9 @@ public:
 
 	void OnUpdateOverlay(vks::UIOverlay& overlay) {
 		overlay.text("%d sprites", game.monsters.size());
+		overlay.text("playerpos: %.2f %.2f", game.player.position.x, game.player.position.y);
+		overlay.text("next spawn: %.2f", game.spawnTriggerDuration - game.spawnTriggerTimer);
+		overlay.text("spawn count: %d", game.spawnTriggerMonsterCount);
 		//overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
 	}
 
@@ -750,8 +806,10 @@ public:
 
 	virtual void keyPressed(uint32_t key)
 	{
+		// @todo: zoom out for testings
+
 		if (key == sf::Keyboard::Add) {
-			spawnMonsters(4096);
+			spawnMonsters(game.spawnTriggerMonsterCount);
 			//spriteIndex++;
 			//if (spriteIndex > textureDescriptors.size()) {
 			//	spriteIndex = 0;

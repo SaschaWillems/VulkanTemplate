@@ -8,7 +8,7 @@
 
 namespace Game {
 	namespace Entities {
-		class Player : Entity {
+		class Player : public Entity {
 
 		};
 	}

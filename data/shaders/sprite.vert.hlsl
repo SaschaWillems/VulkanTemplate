@@ -35,7 +35,7 @@ VSOutput main(VSInput input)
 {
     VSOutput output = (VSOutput) 0;
     float3 locPos = input.pos * input.instanceScale;
-    output.pos = mul(ubo.projection, float4(locPos + input.instancePos, 1.0));
+    output.pos = mul(ubo.view, mul(ubo.projection, float4(locPos + input.instancePos, 1.0)));
     output.uv = input.uv;
     output.textureIndex = input.instanceTextureIndex;
     return output;
