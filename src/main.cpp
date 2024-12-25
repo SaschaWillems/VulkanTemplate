@@ -21,6 +21,7 @@
 #include "object_types/Monsters.hpp"
 #include "entities/Entity.hpp"
 #include "entities/Monster.hpp"
+#include "entities/Player.hpp"
 #include "stb_image.h"
 
 // @todo: audio (music and sfx)
@@ -61,7 +62,6 @@ struct InstanceData {
 	glm::vec2 scale{ 1.0f };
 	uint32_t imageIndex{ 0 };
 };
-uint32_t instanceCount{ 0 };
 
 ActorManager* actorManager{ nullptr };
 AssetManager* assetManager{ nullptr };
@@ -79,14 +79,27 @@ public:
 	ObjectTypes::MonsterTypes monsterTypes{};
 	// @todo: Entity manager
 	std::vector<Game::Entities::Monster> monsters;
+	Game::Entities::Player player;
 } game;
 
 class Application : public VulkanApplication {
 private:
+	// Changing buffers (e.g. instance, will increase by this size)
+	const uint32_t spriteBufferBlockSize{ 16384 };
 	struct FrameObjects : public VulkanFrameObjects {
-		Buffer* uniformBuffer;
-		DescriptorSet* descriptorSet;
+		Buffer* uniformBuffer{ nullptr };
+		DescriptorSet* descriptorSet{ nullptr };
+		Buffer* instanceBuffer{ nullptr };
+		uint32_t instanceBufferSize{ 0 };
+		uint32_t instanceBufferDrawCount{ 0 };
+		std::vector<InstanceData> instances{};
 	};
+	// One large staging buffer that's reused for all copies
+	// @todo: per frame?
+	const size_t stagingBufferSize = 16 * 1024 * 1024;
+	Buffer* stagingBuffer{ nullptr };
+	CommandBuffer* copyCommandBuffer{ nullptr };
+
 	// One set for all images
 	std::vector<VkDescriptorImageInfo> textureDescriptors{};
 	std::vector<VkDescriptorImageInfo> samplerDescriptors{};
@@ -107,7 +120,6 @@ private:
 	float firingTimer;
 	int32_t spriteIndex{ 0 };
 	Buffer* quadBuffer{ nullptr };
-	Buffer* instanceBuffer{ nullptr };
 	glm::vec2 screenDim{ 0.0f };
 public:	
 	Application() : VulkanApplication() {
@@ -145,7 +157,9 @@ public:
 		for (FrameObjects& frame : frameObjects) {
 			destroyBaseFrameObjects(frame);
 			delete frame.uniformBuffer;
+			delete frame.instanceBuffer;
 		}
+		delete stagingBuffer;
 		if (fileWatcher) {
 			fileWatcher->stop();
 			delete fileWatcher;
@@ -155,6 +169,9 @@ public:
 		}
 		for (auto& texture : textures) {
 			delete texture;
+		}
+		if (!copyCommandBuffer) {
+			delete copyCommandBuffer;
 		}
 		delete descriptorPool;
 		delete descriptorSetLayoutUniforms;
@@ -167,7 +184,6 @@ public:
 		}
 		delete audioManager;
 		delete quadBuffer;
-		delete instanceBuffer;
 	}
 
 	void loadAssets() {		
@@ -324,56 +340,54 @@ public:
 			m.imageIndex = rndTextureIndex(rndGenerator);
 			game.monsters.push_back(m);
 		}
-
-		updateInstanceBuffer();
 	}
 
-	void updateInstanceBuffer() {
+	void updateInstanceBuffer(FrameObjects& frame) {
 
-		// @todo: one per frame in flight
-		if (instanceBuffer) {
-			delete instanceBuffer;
+		if (frame.instances.size() < game.monsters.size()) {
+			frame.instances.resize(game.monsters.size());
+			// @todo: resize in chunks (e.g. 8192)
 		}
 
-		// Only updated if changed, not needed on every frame
-		std::vector<InstanceData> instances{};
-		for (auto& monster : game.monsters) {
-			InstanceData instance{};
-			instance.imageIndex = monster.imageIndex;
-			instance.pos = glm::vec3(monster.position, 0.0f);
-			instances.push_back(instance);
+		frame.instanceBufferDrawCount = static_cast<uint32_t>(game.monsters.size());
+		for (auto i = 0; i < game.monsters.size(); i++) {
+			Game::Entities::Monster& monster = game.monsters[i];
+			frame.instances[i].imageIndex = monster.imageIndex;
+			frame.instances[i].pos = glm::vec3(monster.position, 0.0f);
 		}
-		instanceCount = static_cast<uint32_t>(instances.size());
-		assert(instanceCount > 0);
+		assert(frame.instanceBufferDrawCount > 0);
 
-		const size_t instanceBufferSize = instances.size() * sizeof(InstanceData);
+		const size_t instanceBufferSize = frame.instanceBufferDrawCount * sizeof(InstanceData);
+		stagingBuffer->copyTo(frame.instances.data(), instanceBufferSize);
 
-		// @todo: keep a global staging buffer that's reused (and large enough
-		Buffer* stagingBuffer = new Buffer({
-			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			.size = instanceBufferSize,
-			.data = instances.data()
-		});
+		// Only recreate buffer if necessary
+		if (!frame.instanceBuffer || frame.instanceBufferSize < instanceBufferSize) {
+			delete frame.instanceBuffer;
+			frame.instanceBuffer = new Buffer({
+				.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+				.size = instanceBufferSize
+			});
+		}
+		frame.instanceBufferSize = instanceBufferSize;
 
-		instanceBuffer = new Buffer({
-			.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			.size = instanceBufferSize
-		});
-
-		// @todo: global copy command buffer
-		CommandBuffer* cb = new CommandBuffer({ .device = *vulkanDevice, .pool = commandPool });
-		cb->begin();
+		if (!copyCommandBuffer) {
+			copyCommandBuffer = new CommandBuffer({ .device = *vulkanDevice, .pool = commandPool });
+		}
+		copyCommandBuffer->begin();
 		VkBufferCopy bufferCopy = { .size = instanceBufferSize };
-		vkCmdCopyBuffer(cb->handle, stagingBuffer->buffer, instanceBuffer->buffer, 1, &bufferCopy);
-		cb->end();
-		cb->oneTimeSubmit(queue);
-		delete cb;
-
-		delete stagingBuffer;
+		vkCmdCopyBuffer(copyCommandBuffer->handle, stagingBuffer->buffer, frame.instanceBuffer->buffer, 1, &bufferCopy);
+		copyCommandBuffer->end();
+		copyCommandBuffer->oneTimeSubmit(queue);
 	}
 
 	void prepare() {
 		VulkanApplication::prepare();
+
+		// Create one large staging buffer to be reused for copies
+		stagingBuffer = new Buffer({
+			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			.size = stagingBufferSize,
+		});
 
 		fileWatcher = new FileWatcher();
 
@@ -382,8 +396,7 @@ public:
 		generateQuad();
 
 		// @todo: Update every frame
-		spawnMonsters(256);
-		//updateInstanceBuffer();
+		spawnMonsters(200960);
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
@@ -621,11 +634,11 @@ public:
 		// Instancing buffer stores sprite index, position, scale, direction (to flip/rotate) uv, maybe color for health state
 
 		cb->bindVertexBuffers(0, 1, { quadBuffer->buffer });
-		cb->bindVertexBuffers(1, 1, { instanceBuffer->buffer });
+		cb->bindVertexBuffers(1, 1, { frame.instanceBuffer->buffer });
 		cb->bindDescriptorSets(pipelineLayouts["sprite"], { descriptorSetTextures, descriptorSetSamplers, frame.descriptorSet });
 		cb->bindPipeline(pipelines["sprite"]);
 		cb->updatePushConstant(pipelineLayouts["sprite"], 0, &pushConstBlock);
-		cb->draw(6, instanceCount, 0, 0);
+		cb->draw(6, frame.instanceBufferDrawCount, 0, 0);
 		
 		if (overlay->visible) {
 			overlay->draw(cb, getCurrentFrameIndex());
@@ -655,9 +668,12 @@ public:
 		camera.mouse.cursorPos = mousePos;
 		camera.mouse.cursorPosNDC = (mousePos / glm::vec2(float(width), float(height)));
 
-		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
+		FrameObjects& currentFrame = frameObjects[getCurrentFrameIndex()];
 		VulkanApplication::prepareFrame(currentFrame);
 		updateOverlay(getCurrentFrameIndex());
+		// @todo
+		updateInstanceBuffer(currentFrame);
+
 		shaderData.timer = timer;
 
 		shaderData.view = glm::mat4(1.0f);
