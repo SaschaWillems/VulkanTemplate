@@ -89,6 +89,8 @@ public:
 	uint32_t spawnTriggerMonsterCount{ 128 };
 } game;
 
+std::default_random_engine rndGenerator((unsigned)time(nullptr));
+
 class Application : public VulkanApplication {
 private:
 	// Changing buffers (e.g. instance, will increase by this size)
@@ -337,10 +339,19 @@ public:
 		delete stagingBuffer;
 	}
 
+	void monsterSpawnPosition(Game::Entities::Monster& monster) {
+		std::uniform_real_distribution<float> uniformDist(0.0, 1.0);
+		glm::vec2 ring{ screenDim.x * 1.5f, screenDim.x * 1.75f };
+		float rho, theta;
+		// Inner ring
+		rho = sqrt((pow(ring[1], 2.0f) - pow(ring[0], 2.0f)) * uniformDist(rndGenerator) + pow(ring[0], 2.0f));
+		theta = static_cast<float>(2.0f * M_PI * uniformDist(rndGenerator));
+		monster.position = glm::vec2(rho * cos(theta), rho * sin(theta)) + game.player.position;
+	}
+
 	// @todo
 	void spawnMonsters(uint32_t count) {
 		// @todo: Just testing
-		std::default_random_engine rndGenerator((unsigned)time(nullptr));
 		std::uniform_real_distribution<float> posDistX(-screenDim.x, screenDim.x);
 		std::uniform_real_distribution<float> posDistY(-screenDim.y, screenDim.y);
 		std::uniform_real_distribution<float> dirDist(-1.0f, 1.0f);
@@ -348,20 +359,11 @@ public:
 		std::uniform_real_distribution<float> scaleDist(0.5f, 1.0f);
 		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size() - 1));
 		std::uniform_int_distribution<uint32_t> spawnSectorDist(0, 3);
-		std::uniform_real_distribution<float> uniformDist(0.0, 1.0);
 
 		// Spawn in a ring centered at the player position
 		for (auto i = 0; i < count; i++) {
 			Game::Entities::Monster m;
-
-			glm::vec2 ring{ screenDim.x * 1.5f, screenDim.x * 1.75f };
-			float rho, theta;
-
-			// Inner ring
-			rho = sqrt((pow(ring[1], 2.0f) - pow(ring[0], 2.0f)) * uniformDist(rndGenerator) + pow(ring[0], 2.0f));
-			theta = static_cast<float>(2.0f * M_PI * uniformDist(rndGenerator));
-
-			m.position = glm::vec2(rho * cos(theta), rho * sin(theta)) + game.player.position;
+			monsterSpawnPosition(m);
 			m.imageIndex = rndTextureIndex(rndGenerator);
 			m.speed = speedDist(rndGenerator);
 			m.scale = scaleDist(rndGenerator);
@@ -381,10 +383,12 @@ public:
 			Game::Entities::Monster& monster = game.monsters[i];
 			// @todo: simple "logic" for testing
 			// @todo: Use velocity
+			// Monsters far away respawn outside of the view
+			if (glm::length(game.player.position - monster.position) > screenDim.x * 3.0f) {
+				monsterSpawnPosition(monster);
+			};
 			monster.direction = glm::normalize(game.player.position - monster.position);
 			monster.position += monster.direction * monster.speed * frameTimer;
-			if (abs(monster.position.x) > screenDim.x) { monster.direction.x *= -1.0f; }
-			if (abs(monster.position.y) > screenDim.y) { monster.direction.y *= -1.0f; }
 		}
 	}
 
