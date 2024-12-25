@@ -22,6 +22,7 @@
 #include "entities/Entity.hpp"
 #include "entities/Monster.hpp"
 #include "entities/Player.hpp"
+#include "entities/Projectile.hpp"
 #include "stb_image.h"
 
 // @todo: audio (music and sfx)
@@ -79,6 +80,7 @@ public:
 	ObjectTypes::MonsterTypes monsterTypes{};
 	// @todo: Entity manager
 	std::vector<Game::Entities::Monster> monsters;
+	std::vector<Game::Entities::Projectile> projectiles;
 	Game::Entities::Player player;
 
 	//
@@ -87,6 +89,11 @@ public:
 	float spawnTriggerDuration{ 100.0f };
 	// Will be increased with increasing game duration
 	uint32_t spawnTriggerMonsterCount{ 128 };
+
+	// @todo
+	uint32_t projectileImageIndex;
+	float playerFireTimer{ 0.0f };
+	float playerFireTimerDuration{ 5.0f };
 } game;
 
 std::default_random_engine rndGenerator((unsigned)time(nullptr));
@@ -102,6 +109,12 @@ private:
 		uint32_t instanceBufferSize{ 0 };
 		uint32_t instanceBufferDrawCount{ 0 };
 		InstanceData* instances{nullptr};
+		// @todo: Separate projectiles into own set of instance buffers (due to different update frequency?)
+		//struct Projectiles {
+		//	Buffer* instanceBuffer{ nullptr };
+		//	uint32_t instanceBufferSize{ 0 };
+		//	uint32_t instanceBufferDrawCount{ 0 };
+		//} projectiles;
 	};
 	// One large staging buffer that's reused for all copies
 	// @todo: per frame?
@@ -228,8 +241,11 @@ public:
 			}
 		}
 
-		// @todo
+		// @todo: Player images
 		loadTexture(getAssetPath() + "game/players/human_male.png", game.player.imageIndex);
+
+		// @todo: Projectile images
+		loadTexture(getAssetPath() + "game/projectiles/magic_bolt_1.png", game.projectileImageIndex);
 
 		SamplerCreateInfo samplerCI {
 			.name = "Sprite sampler",
@@ -375,8 +391,44 @@ public:
 		}
 	}
 
-	void updateGameLogic()
-	{
+	void spawnProjectile(Game::Entities::Source source, uint32_t imageIndex, glm::vec2 position, glm::vec2 direction) {
+		// @todo: grow in chunks
+		// @todo: check for dead projectiles and replace them instead
+		// @todo: Add projectile types with properties like speed, movement pattern, damage, source, tc.
+		Game::Entities::Projectile projectile{};
+		projectile.position = position;
+		projectile.direction = direction;
+		projectile.imageIndex = imageIndex;
+		projectile.source = source;
+		projectile.damage = 10.0f;
+		projectile.life = 100.0f;
+		projectile.speed = 15.0f;
+		projectile.scale = 0.5f;
+		projectile.state = Game::Entities::State::Alive;
+		game.projectiles.push_back(projectile);
+	}
+
+	void updateGameLogic() {
+		// @todo: totally work in progress
+
+		// Player projectiles
+		game.playerFireTimer += frameTimer * 25.0f;
+		if (game.playerFireTimer > game.playerFireTimerDuration) {
+			game.playerFireTimer = 0.0f;
+			std::uniform_real_distribution<float> dirDist(-1.0f, 1.0f);
+			spawnProjectile(Game::Entities::Source::Player, game.projectileImageIndex, game.player.position, glm::vec2(dirDist(rndGenerator), dirDist(rndGenerator)));
+		}
+
+		for (auto i = 0; i < game.projectiles.size(); i++) {
+			Game::Entities::Projectile& projectile = game.projectiles[i];
+			projectile.position += projectile.direction * projectile.speed * frameTimer;
+			projectile.life -= frameTimer * 50.0f;
+			if (projectile.life <= 0.0f) {
+				projectile.state = Game::Entities::State::Dead;
+			}
+		}
+
+		// Monster spawn
 		game.spawnTriggerTimer += frameTimer * 25.0f;
 		if (game.spawnTriggerTimer > game.spawnTriggerDuration) {
 			game.spawnTriggerTimer = 0.0f;
@@ -397,7 +449,10 @@ public:
 	}
 
 	void updateInstanceBuffer(FrameObjects& frame) {
-		uint32_t requestedInstanceCount = static_cast<uint32_t>(game.monsters.size()) + 1;
+		uint32_t requestedInstanceCount = 
+			static_cast<uint32_t>(game.monsters.size()) +
+			static_cast<uint32_t>(game.projectiles.size()) +
+			1;
 
 		if (frame.instanceBufferDrawCount < requestedInstanceCount) {
 			frame.instances = new InstanceData[requestedInstanceCount];
@@ -405,6 +460,8 @@ public:
 			// @todo: resize in chunks (e.g. 8192)
 		}
 		frame.instanceBufferDrawCount = static_cast<uint32_t>(requestedInstanceCount);
+		uint32_t instanceIndex{ 0 };
+
 
 		for (auto i = 0; i < game.monsters.size(); i++) {
 			Game::Entities::Monster& monster = game.monsters[i];
@@ -412,10 +469,24 @@ public:
 			frame.instances[i].imageIndex = monster.imageIndex;
 			frame.instances[i].pos = glm::vec3(monster.position, 0.0f);
 			frame.instances[i].scale = monster.scale;
+
+			instanceIndex++;
 		}
 
+		// @todo: projectiles (maybe separate into own instance buffer due to diff. update frequency)
+		for (auto i = 0; i < game.projectiles.size(); i++) {
+			Game::Entities::Projectile& projectile = game.projectiles[i];
+
+			frame.instances[i].imageIndex = projectile.imageIndex;
+			frame.instances[i].pos = glm::vec3(projectile.position, 0.0f);
+			frame.instances[i].scale = projectile.scale;
+
+			instanceIndex++;
+		}
+
+
 		// @todo: player
-		frame.instances[game.monsters.size()] = {
+		frame.instances[instanceIndex] = {
 			.pos = glm::vec3(game.player.position, 0.0f),
 			.scale = game.player.scale,
 			.imageIndex = game.player.imageIndex,
@@ -803,7 +874,8 @@ public:
 		overlay.text("%d sprites", game.monsters.size());
 		overlay.text("playerpos: %.2f %.2f", game.player.position.x, game.player.position.y);
 		overlay.text("next spawn: %.2f", game.spawnTriggerDuration - game.spawnTriggerTimer);
-		overlay.text("spawn count: %d", game.spawnTriggerMonsterCount);
+		//overlay.text("spawn count: %d", game.spawnTriggerMonsterCount);
+		overlay.text("projectiles: %d", static_cast<uint32_t>(game.projectiles.size()));
 		//overlay.sliderInt("Spirte index", &spriteIndex, 0, textureDescriptors.size());
 	}
 

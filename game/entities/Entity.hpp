@@ -10,6 +10,18 @@
 
 namespace Game {
 	namespace Entities {
+		
+		enum class Source {
+			Player = 0,
+			Monster = 1,
+			Environment = 2
+		};
+
+		enum class State {
+			Alive = 0,
+			Dead = 1
+		};
+
 		class Entity {
 		public:
 			glm::vec2 position{};
@@ -20,6 +32,9 @@ namespace Game {
 			float scale{ 1.0f };
 			// @todo: archetype instead
 			uint32_t imageIndex;
+			// @todo
+			Source source = Source::Player;
+			State state = State::Alive;
 		};
 	}
 }

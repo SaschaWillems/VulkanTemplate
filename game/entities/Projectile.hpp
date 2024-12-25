@@ -10,8 +10,11 @@
 
 namespace Game {
 	namespace Entities {
-		class Player : public Entity {
-
+		class Projectile : public Entity {
+		public:
+			float damage;
+			// @todo: better name
+			float life;
 		};
 	}
 }

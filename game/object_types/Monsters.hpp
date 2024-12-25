@@ -10,6 +10,7 @@ namespace ObjectTypes {
 	public:
 		std::string name;
 		std::string image;
+		uint32_t imageIndex;
 		float size;
 		float health;
 		float speed;
