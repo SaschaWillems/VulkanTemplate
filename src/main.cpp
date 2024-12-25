@@ -228,6 +228,9 @@ public:
 			}
 		}
 
+		// @todo
+		loadTexture(getAssetPath() + "game/players/human_male.png", game.player.imageIndex);
+
 		SamplerCreateInfo samplerCI {
 			.name = "Sprite sampler",
 			.magFilter = VK_FILTER_NEAREST,
@@ -357,6 +360,7 @@ public:
 		std::uniform_real_distribution<float> dirDist(-1.0f, 1.0f);
 		std::uniform_real_distribution<float> speedDist(0.5f, 2.5f);
 		std::uniform_real_distribution<float> scaleDist(0.5f, 1.0f);
+		// @todo: random from types instead, textures will also contain sprites that are not monsters
 		std::uniform_int_distribution<uint32_t> rndTextureIndex(0, static_cast<uint32_t>(textures.size() - 1));
 		std::uniform_int_distribution<uint32_t> spawnSectorDist(0, 3);
 
@@ -393,13 +397,14 @@ public:
 	}
 
 	void updateInstanceBuffer(FrameObjects& frame) {
+		uint32_t requestedInstanceCount = static_cast<uint32_t>(game.monsters.size()) + 1;
 
-		if (frame.instanceBufferDrawCount < game.monsters.size()) {
-			frame.instances = new InstanceData[game.monsters.size()];
+		if (frame.instanceBufferDrawCount < requestedInstanceCount) {
+			frame.instances = new InstanceData[requestedInstanceCount];
 			//frame.instances.resize(game.monsters.size());
 			// @todo: resize in chunks (e.g. 8192)
 		}
-		frame.instanceBufferDrawCount = static_cast<uint32_t>(game.monsters.size());
+		frame.instanceBufferDrawCount = static_cast<uint32_t>(requestedInstanceCount);
 
 		for (auto i = 0; i < game.monsters.size(); i++) {
 			Game::Entities::Monster& monster = game.monsters[i];
@@ -408,6 +413,13 @@ public:
 			frame.instances[i].pos = glm::vec3(monster.position, 0.0f);
 			frame.instances[i].scale = monster.scale;
 		}
+
+		// @todo: player
+		frame.instances[game.monsters.size()] = {
+			.pos = glm::vec3(game.player.position, 0.0f),
+			.scale = game.player.scale,
+			.imageIndex = game.player.imageIndex,
+		};
 		
 		assert(frame.instanceBufferDrawCount > 0);
 
@@ -447,6 +459,7 @@ public:
 		fileWatcher = new FileWatcher();
 
 		game.player.speed = 5.0f;
+		game.player.scale = 1.0f;
 
 		loadAssets();
 
