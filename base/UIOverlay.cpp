@@ -453,6 +453,7 @@ namespace vks
 			frameObjects[frameIndex].vertexBuffer = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 				.size = vertexBufferSize,
+				.map = true,
 			});
 			frameObjects[frameIndex].vertexCount = imDrawData->TotalVtxCount;
 		}
@@ -466,6 +467,7 @@ namespace vks
 			frameObjects[frameIndex].indexBuffer = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 				.size = indexBufferSize,
+				.map = true,
 			});
 			frameObjects[frameIndex].indexCount = imDrawData->TotalIdxCount;
 		}

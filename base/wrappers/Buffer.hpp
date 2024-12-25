@@ -19,7 +19,7 @@ struct BufferCreateInfo {
 	const std::string name{ "" };
 	VkBufferUsageFlags usageFlags;
 	VkDeviceSize size;
-	bool map{ true };
+	bool map{ false };
 	void* data{ nullptr };
 };
 
@@ -41,6 +41,10 @@ public:
 		VmaAllocationCreateInfo bufferAllocInfo{ .usage = VMA_MEMORY_USAGE_AUTO };
 		if ((createInfo.data != nullptr) || (createInfo.map)) {
 			bufferAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+		}
+		else {
+			bufferAllocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+			bufferAllocInfo.priority = 1.0f;
 		}
 		VK_CHECK_RESULT(vmaCreateBuffer(VulkanContext::vmaAllocator, &bufferCreateInfo, &bufferAllocInfo, &buffer, &bufferAllocation, nullptr));
 

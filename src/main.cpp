@@ -92,7 +92,7 @@ private:
 		Buffer* instanceBuffer{ nullptr };
 		uint32_t instanceBufferSize{ 0 };
 		uint32_t instanceBufferDrawCount{ 0 };
-		std::vector<InstanceData> instances{};
+		InstanceData* instances{nullptr};
 	};
 	// One large staging buffer that's reused for all copies
 	// @todo: per frame?
@@ -158,6 +158,7 @@ public:
 			destroyBaseFrameObjects(frame);
 			delete frame.uniformBuffer;
 			delete frame.instanceBuffer;
+			delete[] frame.instances;
 		}
 		delete stagingBuffer;
 		if (fileWatcher) {
@@ -344,21 +345,23 @@ public:
 
 	void updateInstanceBuffer(FrameObjects& frame) {
 
-		if (frame.instances.size() < game.monsters.size()) {
-			frame.instances.resize(game.monsters.size());
+		if (frame.instanceBufferDrawCount < game.monsters.size()) {
+			frame.instances = new InstanceData[game.monsters.size()];
+			//frame.instances.resize(game.monsters.size());
 			// @todo: resize in chunks (e.g. 8192)
 		}
-
 		frame.instanceBufferDrawCount = static_cast<uint32_t>(game.monsters.size());
+
 		for (auto i = 0; i < game.monsters.size(); i++) {
-			Game::Entities::Monster& monster = game.monsters[i];
-			frame.instances[i].imageIndex = monster.imageIndex;
-			frame.instances[i].pos = glm::vec3(monster.position, 0.0f);
+			//Game::Entities::Monster& monster = game.monsters[i];
+			frame.instances[i].imageIndex = game.monsters[i].imageIndex;
+			frame.instances[i].pos = glm::vec3(game.monsters[i].position, 0.0f);
 		}
+		
 		assert(frame.instanceBufferDrawCount > 0);
 
 		const size_t instanceBufferSize = frame.instanceBufferDrawCount * sizeof(InstanceData);
-		stagingBuffer->copyTo(frame.instances.data(), instanceBufferSize);
+		stagingBuffer->copyTo(frame.instances, instanceBufferSize);
 
 		// Only recreate buffer if necessary
 		if (!frame.instanceBuffer || frame.instanceBufferSize < instanceBufferSize) {
@@ -387,6 +390,7 @@ public:
 		stagingBuffer = new Buffer({
 			.usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			.size = stagingBufferSize,
+			.map = true
 		});
 
 		fileWatcher = new FileWatcher();
@@ -396,7 +400,8 @@ public:
 		generateQuad();
 
 		// @todo: Update every frame
-		spawnMonsters(200960);
+		spawnMonsters(1000000);
+//		spawnMonsters(200960);
 
 		// @todo: move camera out of vulkanapplication (so we can have multiple cameras)
 		camera.type = Camera::CameraType::firstperson;
@@ -412,6 +417,7 @@ public:
 			frame.uniformBuffer = new Buffer({
 				.usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				.size = sizeof(ShaderData),
+				.map = true
 			});
 		}
 
@@ -637,7 +643,7 @@ public:
 		cb->bindVertexBuffers(1, 1, { frame.instanceBuffer->buffer });
 		cb->bindDescriptorSets(pipelineLayouts["sprite"], { descriptorSetTextures, descriptorSetSamplers, frame.descriptorSet });
 		cb->bindPipeline(pipelines["sprite"]);
-		cb->updatePushConstant(pipelineLayouts["sprite"], 0, &pushConstBlock);
+		//cb->updatePushConstant(pipelineLayouts["sprite"], 0, &pushConstBlock);
 		cb->draw(6, frame.instanceBufferDrawCount, 0, 0);
 		
 		if (overlay->visible) {
